@@ -93,10 +93,21 @@ const gate = new Gate({
   send: (frame) => manager.send(frame),
 });
 
+/** 测试构建里记下调试附着的断开（实测「提示条上点取消」给出的原因）。 */
+const detachLog: Array<{ tabId: number | null; reason: string; at: number }> = [];
+
 const sessions = new SessionManager(() => {
+  if (__TEST_HOOKS__) {
+    detachLog.push({ tabId: null, reason: 'canceled_by_user', at: Date.now() });
+  }
+
   void stop();
 }, (tabId) => {
-  void tabRegistry.onTabRemoved(tabId);
+  // 只清附着会话（SessionManager 已经做了），不动标签登记：标签被浏览器丢弃时附着也会以 target_closed
+  // 断开，但标签还在、只是换了 id（onReplaced）。真关掉的标签由 tabs.onRemoved 从登记里删。
+  if (__TEST_HOOKS__) {
+    detachLog.push({ tabId, reason: 'target_closed', at: Date.now() });
+  }
 });
 
 const services: Services = {
@@ -145,6 +156,16 @@ async function resume(): Promise<void> {
 chrome.tabs.onRemoved.addListener((tabId) => {
   void tabRegistry.onTabRemoved(tabId);
   void sessions.detach(tabId);
+});
+
+// 标签切到前台就有了真实尺寸：撤掉给 0×0 后台标签临时定的视口。
+chrome.tabs.onActivated.addListener(({ tabId }) => {
+  void sessions.peek(tabId)?.clearViewportOverride();
+});
+
+chrome.tabs.onReplaced.addListener((added, removed) => {
+  void sessions.detach(removed);
+  void tabRegistry.onTabReplaced(added, removed);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -320,5 +341,9 @@ if (__TEST_HOOKS__ && fakeServer) {
     sites,
     tabs: tabRegistry,
     setAutoMode: (on: boolean) => local.set(AUTO_MODE_KEY, on),
+    detachLog,
+    attachedCount: () => sessions.attachedCount,
+    /** 对已附着的标签发调试命令（实测用：模拟页面被冻结等）。 */
+    cdp: (tabId: number, method: string, params: Record<string, unknown> = {}) => sessions.peek(tabId)?.cdp.send(method, params),
   };
 }

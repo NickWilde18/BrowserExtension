@@ -54,7 +54,9 @@ const pages = {
   '/download.html': page('Downloads', `
     <h1>Downloads</h1>
     <a href="/files/report.txt" id="att">Get the report</a>
-    <a href="/files/plain.csv" download="table.csv" id="dl">Get the table</a>`),
+    <a href="/files/plain.csv" download="table.csv" id="dl">Get the table</a>
+    <a href="${B}/files/report.txt" id="cross">Get the mirrored report</a>
+    <form method="post" action="/export"><input name="q" value="2026" aria-label="Year"><button type="submit">Export</button></form>`),
   '/iframe.html': page('Frames', `
     <h1>Frames</h1>
     <iframe src="/frame-child.html?name=same" title="same" width="400" height="120"></iframe>
@@ -101,8 +103,29 @@ const pages = {
   '/later.html': page('Later', `<p id="msg">waiting</p>`, `setTimeout(() => { document.getElementById('msg').textContent = 'ready now'; }, 1200);`),
 };
 
+/** 按「主机 路径」计每个页面被请求了几次（测试据此判断请求有没有发到某个站点）。 */
+const hits = {};
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, A);
+
+  if (url.pathname === '/__stats') {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(hits));
+    return;
+  }
+
+  if (url.pathname === '/__reset') {
+    for (const k of Object.keys(hits)) {
+      delete hits[k];
+    }
+
+    res.end('ok');
+    return;
+  }
+
+  const key = `${req.headers.host} ${url.pathname}`;
+  hits[key] = (hits[key] ?? 0) + 1;
 
   if (url.pathname === '/submitted') {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -121,6 +144,17 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="report-2026.txt"');
     res.end('quarterly report\nline two\n');
+    return;
+  }
+
+  if (url.pathname === '/export' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="export.csv"');
+      res.end(`posted,${body}\n`);
+    });
     return;
   }
 

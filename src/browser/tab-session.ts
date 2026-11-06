@@ -16,6 +16,9 @@ import { Recorder } from './recorder';
 
 const WORLD_NAME = '__bx_agent';
 
+/** 窗口里标签栏加工具栏的大致高度（CSS 像素），给 0×0 的后台标签按窗口尺寸定视口时扣掉。 */
+const BROWSER_UI_HEIGHT = 88;
+
 /** 在隔离世界里调用代理方法的函数（固定写法，参数经 CallArgument 传值，不拼进源码）。 */
 const CALL_AGENT = 'function(m, ...a) { return globalThis.__bxAgent[m](...a); }';
 
@@ -87,6 +90,8 @@ export class TabSession {
   mainFrameId = '';
   dialog: (PageDialog & { sessionId: string | undefined }) | null = null;
   detached = false;
+  /** ensureViewport 临时给过视口。 */
+  private viewportOverridden = false;
   /** Page.downloadWillBegin（下载开始）的接收方，见 downloads.ts。 */
   onDownloadWillBegin: ((params: { url: string; suggestedFilename: string; guid: string }) => void) | null = null;
 
@@ -316,6 +321,40 @@ export class TabSession {
     }
 
     return info;
+  }
+
+  /**
+   * 后台被丢弃、又在后台重新加载的标签视口是 0×0（实测），元素都没有大小：拿不到编号、截图是空的。
+   * 这时按窗口尺寸临时给它一个视口；标签切到前台时撤掉（clearViewportOverride），看得见的标签会拿到真实尺寸。
+   */
+  async ensureViewport(): Promise<void> {
+    if (this.dialog) {
+      return;
+    }
+
+    const [w, h] = await this.call<[number, number]>(this.mainFrameId, 'viewportSize');
+    if (w > 0 && h > 0) {
+      return;
+    }
+
+    const tab = await chrome.tabs.get(this.tabId);
+    const win = await chrome.windows.get(tab.windowId);
+    await this.cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: Math.max(320, win.width ?? 1280),
+      height: Math.max(240, (win.height ?? 900) - BROWSER_UI_HEIGHT),
+      deviceScaleFactor: 0,
+      mobile: false,
+    });
+    this.viewportOverridden = true;
+  }
+
+  async clearViewportOverride(): Promise<void> {
+    if (!this.viewportOverridden) {
+      return;
+    }
+
+    this.viewportOverridden = false;
+    await this.cdp.send('Emulation.clearDeviceMetricsOverride').catch(() => undefined);
   }
 
   /** 页面上开着对话框时，除了 dialog 动作都做不了（页面脚本被它阻塞）。 */

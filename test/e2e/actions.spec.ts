@@ -338,6 +338,30 @@ test('iframe：同源与跨源子框架进快照，编号带前缀，能点', as
   }
 });
 
+test('后台标签被浏览器丢弃（换了 id）后照常可用：重新加载、重新附着', async () => {
+  // 无头模式、或 Playwright 做视口模拟时，对被丢弃的标签重新加载会让 Chromium 进程自己段错误崩掉（与插件无关，
+  // 不做视口模拟的有界面浏览器里这条流程正常）。真实用户用的是有界面、不模拟视口的浏览器，这个用例也这样跑
+  // （npm run e2e 放在 xvfb-run 里）。
+  test.skip(!process.env.DISPLAY, '需要显示环境（有界面的浏览器），用 xvfb-run 跑');
+  await h.close();
+  h = await launch({ headless: false, realViewport: true });
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/form.html` });
+  const ids = await h.sw.evaluate(async (conv) => {
+    const t = (globalThis as any).__bxTest;
+    const before = await t.tabs.active(conv);
+    const discarded = await chrome.tabs.discard(before);
+    return { before, after: discarded?.id, discarded: discarded?.discarded };
+  }, '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0');
+  expect(ids.discarded).toBe(true);
+
+  const r = await call(h, 'read');
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(String(r.payload?.snapshot)).toContain('textbox "Name" [ref=');
+  const active = await h.sw.evaluate((conv) => (globalThis as any).__bxTest.tabs.active(conv), '0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0');
+  expect(active).toBe(ids.after);
+});
+
 test('网址范围：javascript:、data:、file:// 不开', async () => {
   for (const url of ['javascript:alert(1)', 'data:text/html,hi', 'file:///etc/passwd', 'chrome://settings']) {
     const r = await call(h, 'open', { url });

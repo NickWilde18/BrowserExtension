@@ -1,0 +1,356 @@
+// 把关流程：站点授权、跨站跳转拦截、逐次确认（密码框、上传、下载、脚本）、Auto Mode 下的审批帧。
+import { expect, test } from '@playwright/test';
+
+import { A, B, CONV2, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, sent } from './helpers';
+import type { Harness } from './helpers';
+
+let h: Harness;
+
+test.afterEach(async () => {
+  await h?.close();
+});
+
+/** 夹具服务收到的 B 站 /landing.html 请求次数（用例开头先 resetHits 清零）。 */
+async function landingHitsOnB(): Promise<number> {
+  const stats = await (await fetch(`${A}/__stats`)).json() as Record<string, number>;
+  return stats[`${new URL(B).host} /landing.html`] ?? 0;
+}
+
+async function resetHits(): Promise<void> {
+  await fetch(`${A}/__reset`);
+}
+
+async function snapshot(): Promise<string> {
+  const r = await call(h, 'read');
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  return String(r.payload?.snapshot ?? '');
+}
+
+test('站点授权：仅本次对话；同一对话不再问，别的对话还要问', async () => {
+  h = await launch();
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#site').textContent()).toBe(A);
+  await answer(h, 'This conversation only');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+
+  // 等用户时发了 awaiting_user，点完发了 working。
+  const progress = (await sent(h, 'progress')).filter((f) => f.request_id === id);
+  expect(progress.map((f) => f.stage)).toEqual(['awaiting_user', 'working']);
+  expect(progress[0].kind).toBe('site');
+
+  const again = await call(h, 'open', { url: `${A}/landing.html` });
+  expect(again.outcome).toBe('ok');
+  expect((await sent(h, 'progress')).filter((f) => f.request_id !== id)).toHaveLength(0);
+
+  const other = await send(h, 'open', { url: `${A}/form.html` }, { conversation: CONV2 });
+  await answer(h, 'Deny');
+  const denied = await result(h, other);
+  expect(denied.code).toBe('user_denied');
+});
+
+test('站点授权：总是允许，换对话也不问；弹窗里能撤销', async () => {
+  h = await launch();
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  await answer(h, 'Always allow this site');
+  expect((await result(h, id)).outcome).toBe('ok');
+
+  const other = await call(h, 'open', { url: `${A}/landing.html` }, { conversation: CONV2 });
+  expect(other.outcome).toBe('ok');
+
+  const state = await h.sw.evaluate(() => (globalThis as any).__bxTest.popupState());
+  expect(state.sites.always).toEqual([A]);
+
+  // 弹窗页面里点撤销。
+  const popup = await h.ctx.newPage();
+  await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+  await popup.locator('#sites button').first().click();
+  await expect.poll(async () => (await h.sw.evaluate(() => (globalThis as any).__bxTest.popupState())).sites.always).toEqual([]);
+});
+
+test('站点授权：拒绝不开标签；超时按拒绝', async () => {
+  h = await launch();
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  await answer(h, 'Deny');
+  const r = await result(h, id);
+  expect(r.code).toBe('user_denied');
+  expect((await call(h, 'tabs', { op: 'list' })).payload?.tabs).toEqual([]);
+
+  const slow = await send(h, 'open', { url: `${A}/form.html` }, { authWaitMs: 1500 });
+  await approvalWindow(h);
+  const t = await result(h, slow);
+  expect(t.code).toBe('user_denied');
+  expect(t.message).toContain('in time');
+  await expect.poll(() => h.ctx.pages().filter((p) => p.url().includes('/approval.html')).length).toBe(0);
+});
+
+test('跨站跳转：点链接去没授权的站点先问，拒绝就不跳', async () => {
+  await resetHits();
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/crosssite.html` });
+  const snap = await snapshot();
+
+  const id = await send(h, 'click', { element: 'Other site', ref: refOf(snap, 'Other site') });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#site').textContent()).toBe(B);
+  await answer(h, 'Deny');
+  const r = await result(h, id);
+  expect(r.code, JSON.stringify(r)).toBe('user_denied');
+  expect(r.page?.url).toBe(`${A}/crosssite.html`);
+  // 请求根本没发到那个站点（不是先发出去再回来）。
+  expect(await landingHitsOnB()).toBe(0);
+
+  const id2 = await send(h, 'click', { element: 'Other site', ref: refOf(snap, 'Other site') });
+  await answer(h, 'This conversation only');
+  const ok = await result(h, id2);
+  expect(ok.outcome, JSON.stringify(ok)).toBe('ok');
+  expect(ok.page?.url).toBe(`${B}/landing.html`);
+});
+
+test('跨站跳转：同站链接重定向到别的站点也拦', async () => {
+  await resetHits();
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/crosssite.html` });
+  const snap = await snapshot();
+  const id = await send(h, 'click', { element: 'Redirect away', ref: refOf(snap, 'Redirect away') });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#site').textContent()).toBe(B);
+  await answer(h, 'Deny');
+  const r = await result(h, id);
+  expect(r.code).toBe('user_denied');
+  expect(r.page?.url).toBe(`${A}/crosssite.html`);
+  expect(await landingHitsOnB()).toBe(0);
+});
+
+test('密码框：允许 / 我自己输入 / 拒绝', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/form.html` });
+  const snap = await snapshot();
+  const pw = refOf(snap, 'textbox "Password"');
+  const page = await aiPage(h, '/form.html');
+
+  const id = await send(h, 'type', { element: 'Password', ref: pw, text: 's3cret' });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#detail').textContent()).toContain('Password');
+  await answer(h, 'Allow');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(r.payload?.password_field).toBe(true);
+  expect(await page.locator('#pw').inputValue()).toBe('s3cret');
+  // 审批请求里只有字段名，没有密码。
+  const ar = (await sent(h, 'approval_request')).find((f) => f.request_id === id);
+  expect(ar).toMatchObject({ kind: 'password', site: A, detail: { field: 'Password' } });
+  expect(JSON.stringify(ar)).not.toContain('s3cret');
+
+  const self = await send(h, 'type', { element: 'Password', ref: pw, text: 'ignored' });
+  await answer(h, "I'll type it");
+  const w2 = await approvalWindow(h);
+  await w2.locator('#buttons button', { hasText: 'Done' }).waitFor();
+  await page.locator('#pw').fill('typed-by-user');
+  await w2.locator('#buttons button', { hasText: 'Done' }).click();
+  const sr = await result(h, self);
+  expect(sr.outcome, JSON.stringify(sr)).toBe('ok');
+  expect(sr.message).toContain('themselves');
+  expect(await page.locator('#pw').inputValue()).toBe('typed-by-user');
+
+  const no = await send(h, 'type', { element: 'Password', ref: pw, text: 'nope' });
+  await answer(h, 'Deny');
+  expect((await result(h, no)).code).toBe('user_denied');
+  expect(await page.locator('#pw').inputValue()).toBe('typed-by-user');
+});
+
+async function stageUpload(token: string, bytes: number[], type: string): Promise<void> {
+  await h.sw.evaluate(({ token, bytes, type }) => {
+    (globalThis as any).__bxTest.server.uploads.set(token, { data: new Uint8Array(bytes), type });
+  }, { token, bytes, type });
+}
+
+test('上传：可见的文件框、藏在按钮后面的文件框；拒绝不放文件', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/upload.html` });
+  const snap = await snapshot();
+  const page = await aiPage(h, '/upload.html');
+  const content = Array.from({ length: 2000 }, (_, i) => i % 251);
+  const sum = content.reduce((s, b) => (s + b) % 65521, 0);
+  await stageUpload('t1', content, 'application/pdf');
+  await stageUpload('t2', [104, 105], 'text/plain');
+
+  const id = await send(h, 'upload', {
+    element: 'Attachment', ref: refOf(snap, 'Attachment'),
+    files: [{ token: 't1', name: '报告.pdf', size: 2000, content_type: 'application/pdf' }, { token: 't2', name: 'a.txt', size: 2, content_type: 'text/plain' }],
+  });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#detail').textContent()).toContain('报告.pdf');
+  await answer(h, 'Allow');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(r.payload?.uploaded).toEqual([{ name: '报告.pdf', size: 2000 }, { name: 'a.txt', size: 2 }]);
+  await expect.poll(() => page.locator('#out').textContent()).toContain(`visible:报告.pdf:2000:application/pdf:${sum}`);
+  expect(await page.locator('#out').textContent()).toContain('visible:a.txt:2:text/plain');
+
+  // 藏起来的文件框：点按钮，插件拦下文件选择框，拿到背后的文件框。
+  await stageUpload('t3', [1, 2, 3], 'image/png');
+  const id2 = await send(h, 'upload', {
+    element: 'Choose a photo', ref: refOf(snap, 'button "Choose a photo"'),
+    files: [{ token: 't3', name: 'p.png', size: 3, content_type: 'image/png' }],
+  });
+  await answer(h, 'Allow');
+  const r2 = await result(h, id2);
+  expect(r2.outcome, JSON.stringify(r2)).toBe('ok');
+  await expect.poll(() => page.locator('#out').textContent()).toContain('hidden:p.png:3:image/png:6');
+
+  await stageUpload('t4', [9], 'text/plain');
+  const no = await send(h, 'upload', {
+    element: 'Attachment', ref: refOf(snap, 'Attachment'),
+    files: [{ token: 't4', name: 'x.txt', size: 1, content_type: 'text/plain' }],
+  });
+  await answer(h, 'Deny');
+  expect((await result(h, no)).code).toBe('user_denied');
+  expect(await page.locator('#out').textContent()).not.toContain('x.txt');
+});
+
+test('下载：允许后存成交付文件、不进下载目录；拒绝回 download_denied', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/download.html` });
+  const snap = await snapshot();
+
+  const id = await send(h, 'click', { element: 'Get the report', ref: refOf(snap, 'Get the report') });
+  const win = await approvalWindow(h);
+  expect(await win.locator('#detail').textContent()).toContain('report-2026.txt');
+  await answer(h, 'Allow');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  const file = r.payload?.files?.[0];
+  expect(file).toMatchObject({ kind: 'download', name: 'report-2026.txt', content_type: 'text/plain', size: 26 });
+  const stored = await h.sw.evaluate(() => (globalThis as any).__bxTest.server.files);
+  expect(Buffer.from(stored.at(-1).base64, 'base64').toString()).toBe('quarterly report\nline two\n');
+  const left = await h.sw.evaluate(() => chrome.downloads.search({}));
+  expect(left).toHaveLength(0);
+
+  const id2 = await send(h, 'click', { element: 'Get the table', ref: refOf(snap, 'Get the table') });
+  await answer(h, 'Deny');
+  const d = await result(h, id2);
+  expect(d.outcome, JSON.stringify(d)).toBe('ok');
+  expect(d.payload?.download_denied).toBe(true);
+  expect(await h.sw.evaluate(() => chrome.downloads.search({}))).toHaveLength(0);
+});
+
+test('下载：<a download>（页面里重新取）、跨源的文件地址与表单 POST 导出（响应阶段截下）', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await allowSite(h, B);
+  await call(h, 'open', { url: `${A}/download.html` });
+  const snap = await snapshot();
+  const stored = async () => h.sw.evaluate(() => (globalThis as any).__bxTest.server.files.at(-1));
+
+  const viaAttr = await send(h, 'click', { element: 'Get the table', ref: refOf(snap, 'Get the table') });
+  await answer(h, 'Allow');
+  const r1 = await result(h, viaAttr);
+  expect(r1.outcome, JSON.stringify(r1)).toBe('ok');
+  expect(r1.payload?.files?.[0]).toMatchObject({ kind: 'download', name: 'table.csv' });
+  expect(Buffer.from((await stored()).base64, 'base64').toString()).toBe('a,b\n1,2\n');
+
+  const cross = await send(h, 'click', { element: 'Get the mirrored report', ref: refOf(snap, 'Get the mirrored report') });
+  await answer(h, 'Allow');
+  const r2 = await result(h, cross);
+  expect(r2.outcome, JSON.stringify(r2)).toBe('ok');
+  expect(r2.payload?.files?.[0]).toMatchObject({ kind: 'download', name: 'report-2026.txt' });
+  expect(r2.page?.url).toBe(`${A}/download.html`);
+
+  const post = await send(h, 'click', { element: 'Export', ref: refOf(snap, 'button "Export"') });
+  await answer(h, 'Allow');
+  const r3 = await result(h, post);
+  expect(r3.outcome, JSON.stringify(r3)).toBe('ok');
+  expect(r3.payload?.files?.[0]).toMatchObject({ kind: 'download', name: 'export.csv', content_type: 'text/csv' });
+  expect(Buffer.from((await stored()).base64, 'base64').toString()).toBe('posted,q=2026\n');
+  expect(r3.page?.url).toBe(`${A}/download.html`);
+  expect(await h.sw.evaluate(() => chrome.downloads.search({}))).toHaveLength(0);
+});
+
+test('脚本：每次确认，显示全文；允许后在页面主世界执行，可带元素', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/form.html` });
+  const snap = await snapshot();
+
+  const id = await send(h, 'evaluate', { function: '() => document.title + ":" + typeof window.someGlobal' });
+  const win = await approvalWindow(h);
+  expect(await win.locator('pre').textContent()).toContain('document.title');
+  await answer(h, 'Allow');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(r.payload?.value).toBe('"Form:undefined"');
+
+  const id2 = await send(h, 'evaluate', { function: '(el) => el.tagName', element: 'Submit', ref: refOf(snap, 'button "Submit"') });
+  await answer(h, 'Allow');
+  expect((await result(h, id2)).payload?.value).toBe('"BUTTON"');
+
+  const id3 = await send(h, 'evaluate', { function: '() => { throw new Error("boom") }' });
+  await answer(h, 'Allow');
+  const e = await result(h, id3);
+  expect(e.code).toBe('action_failed');
+  expect(e.message).toContain('boom');
+
+  const id4 = await send(h, 'evaluate', { function: '() => 1' });
+  await answer(h, 'Deny');
+  expect((await result(h, id4)).code).toBe('user_denied');
+});
+
+test('Auto Mode：审查放行就不弹小窗', async () => {
+  h = await launch({ autoApproval: 'allow' });
+  const r = await call(h, 'open', { url: `${A}/form.html` });
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(h.ctx.pages().some((p) => p.url().includes('/approval.html'))).toBe(false);
+  const ar = await sent(h, 'approval_request');
+  expect(ar).toHaveLength(1);
+  expect(ar[0]).toMatchObject({ kind: 'site', site: A, detail: {} });
+  expect(await sent(h, 'progress')).toHaveLength(0);
+});
+
+test('Auto Mode：审查拦下时小窗显示理由，由用户定', async () => {
+  h = await launch({ autoApproval: 'block' });
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  const win = await approvalWindow(h);
+  await expect(win.locator('#review')).toBeVisible();
+  expect(await win.locator('#reviewReason').textContent()).toBe('test reason');
+  await answer(h, 'This conversation only');
+  expect((await result(h, id)).outcome).toBe('ok');
+});
+
+test('Auto Mode：开关关掉不发审批请求，直接问用户', async () => {
+  h = await launch({ autoApproval: 'allow' });
+  await h.sw.evaluate(() => (globalThis as any).__bxTest.setAutoMode(false));
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  await answer(h, 'This conversation only');
+  expect((await result(h, id)).outcome).toBe('ok');
+  expect(await sent(h, 'approval_request')).toHaveLength(0);
+});
+
+test('Auto Mode：Chat 迟迟不回审批，15 秒后回到小窗', async () => {
+  test.setTimeout(60_000);
+  h = await launch({ autoApproval: 'none' });
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  const t0 = Date.now();
+  await approvalWindow(h);
+  expect(Date.now() - t0).toBeGreaterThan(14_000);
+  await answer(h, 'This conversation only');
+  expect((await result(h, id)).outcome).toBe('ok');
+});
+
+test('叫停：弹窗「停止」后请求回 user_stopped，「恢复」后照常', async () => {
+  h = await launch();
+  await allowSite(h, A);
+  await call(h, 'open', { url: `${A}/form.html` });
+  await h.sw.evaluate(() => (globalThis as any).__bxTest.stop());
+  const r = await call(h, 'read');
+  expect(r.code).toBe('user_stopped');
+  await h.sw.evaluate(() => (globalThis as any).__bxTest.resume());
+  const ok = await call(h, 'read');
+  expect(ok.outcome).toBe('ok');
+});

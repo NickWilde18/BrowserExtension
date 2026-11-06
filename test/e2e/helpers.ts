@@ -35,12 +35,13 @@ export interface Harness {
 }
 
 /** 起一个装好插件的浏览器（持久化上下文），连上假 Chat（回 ready），审批默认回 ask_user。 */
-export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean } = {}): Promise<Harness> {
+export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean; realViewport?: boolean } = {}): Promise<Harness> {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bx-e2e-'));
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: opts.headless ?? true,
-    viewport: { width: 1200, height: 800 },
+    // realViewport：不做 Playwright 的视口模拟，页面用真实窗口尺寸（与用户的浏览器一致）。
+    viewport: opts.realViewport ? null : { width: 1200, height: 800 },
     args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`],
   });
 
@@ -56,15 +57,24 @@ export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'bloc
   const extId = new URL(sw.url()).host;
   await sw.evaluate(async (auto) => {
     const t = (globalThis as any).__bxTest;
+    const ready = { type: 'ready', protocol: 1, heartbeat_seconds: 20, account: 'tester@example.edu', max_file_bytes: 20 * 1024 * 1024 };
     (globalThis as any).__autoApproval = auto;
     t.server.onSent((f: any) => {
       const decision = (globalThis as any).__autoApproval;
       if (f.type === 'approval_request' && decision !== 'none') {
         queueMicrotask(() => t.server.deliver({ type: 'approval', request_id: f.request_id, approval_id: f.approval_id, kind: f.kind, decision, reason: decision === 'block' ? 'test reason' : undefined }));
       }
+
+      // 扮演 Chat：每次（重）连都回 ready。
+      if (f.type === 'hello' && t.status().state === 'connecting') {
+        queueMicrotask(() => t.server.deliver(ready));
+      }
     });
 
-    // 等 hello，回 ready。
+    // 心跳：不发的话超过 3 个心跳间隔，插件按心跳超时断线重连。
+    setInterval(() => t.server.deliver({ type: 'ping' }), 20_000);
+
+    // 第一次的 hello 可能在挂监听之前就发了：补回一次 ready。
     for (let i = 0; i < 100; i++) {
       if (t.server.sent.some((f: any) => f.type === 'hello')) {
         break;
@@ -73,7 +83,7 @@ export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'bloc
       await new Promise((r) => setTimeout(r, 50));
     }
 
-    t.server.deliver({ type: 'ready', protocol: 1, heartbeat_seconds: 20, account: 'tester@example.edu', max_file_bytes: 20 * 1024 * 1024 });
+    t.server.deliver(ready);
     for (let i = 0; i < 100 && t.status().state !== 'connected'; i++) {
       await new Promise((r) => setTimeout(r, 20));
     }

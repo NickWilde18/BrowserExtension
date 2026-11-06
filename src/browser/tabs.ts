@@ -306,6 +306,32 @@ export class TabRegistry {
     }
   }
 
+  /**
+   * 标签换了 id（浏览器丢弃后台标签省内存、预渲染替换时会这样，chrome.tabs.onReplaced）：登记里把旧 id
+   * 换成新 id，对话照常用这个标签。
+   */
+  async onTabReplaced(added: number, removed: number): Promise<void> {
+    const all = await this.all();
+    let changed = false;
+    for (const c of Object.values(all)) {
+      const swap = (ids: number[]) => ids.map((t) => (t === removed ? added : t));
+      if (c.tabs.includes(removed) || c.shared.includes(removed)) {
+        c.tabs = swap(c.tabs);
+        c.shared = swap(c.shared);
+        changed = true;
+      }
+
+      if (c.active === removed) {
+        c.active = added;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.save();
+    }
+  }
+
   /** 标签换了组：AI 开的标签被拖出本对话的 AI 标签组，AI 就不再碰它。返回失去它的对话。 */
   async onTabGroupChanged(tabId: number, groupId: number): Promise<string | null> {
     const all = await this.all();

@@ -5,7 +5,7 @@ import { validateArgs } from '../protocol/args';
 import { ActionError, toActionError } from '../protocol/errors';
 import type { ActionName, PageInfo, RequestFrame, ResultFrame } from '../protocol/frames';
 import { siteOf } from '../policy/url';
-import { ActionContext, STOPPED_MESSAGE, abortError, currentUrl } from './context';
+import { ActionContext, STOPPED_MESSAGE, abortError, abortPromise, currentUrl } from './context';
 import type { Services } from './context';
 import { upload } from './files';
 import { close, navigate, open, tabs } from './navigation';
@@ -67,7 +67,9 @@ export async function runRequest(services: Services, request: RequestFrame, sign
 
     const handler = ACTION_TABLE[request.action] as ActionHandler<ActionName>;
     const args = validateArgs(request.action, request.args);
-    const out = await handler(ctx, args as never);
+    // 和中止信号竞速：页面卡住时某个调试命令可能一直不返回，时限一到、被取消或被叫停就立即回结果，
+    // 不让这个对话的串行队列被一个挂住的动作堵死。
+    const out = await Promise.race([handler(ctx, args as never), abortPromise(ctx.signal)]);
     ctx.throwIfAborted();
 
     const result: ResultFrame = { type: 'result', request_id: request.request_id, outcome: 'ok' };
@@ -91,6 +93,15 @@ export async function runRequest(services: Services, request: RequestFrame, sign
   } catch (err) {
     const e = ctx.signal.aborted ? abortError(ctx.signal) : toActionError(err);
     const page = await currentPage(services, request.conversation);
+    if (ctx.signal.aborted && e.code === 'timeout') {
+      // 动作超时或被取消时，调试会话里可能还挂着一条不返回的命令（如冻结页面上的输入事件），
+      // 后面同类命令会排在它后面：断开这一页的附着，下一次动作重新附着、换一个新会话。
+      const tabId = await services.tabs.active(request.conversation).catch(() => null);
+      if (tabId !== null) {
+        await services.sessions.detach(tabId).catch(() => false);
+      }
+    }
+
     return errorResult(request.request_id, e, page);
   } finally {
     ctx.dispose();

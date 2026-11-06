@@ -335,5 +335,10 @@ export function pageAgent(injected: any): any {
     devicePixelRatio(): number {
       return window.devicePixelRatio || 1;
     },
+
+    /** 视口尺寸（CSS 像素）。在后台被丢弃又重新加载的标签里是 0×0。 */
+    viewportSize(): [number, number] {
+      return [window.innerWidth, window.innerHeight];
+    },
   };
 }

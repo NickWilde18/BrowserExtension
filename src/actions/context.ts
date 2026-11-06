@@ -4,6 +4,7 @@ import type { Gate, GateContext } from '../approval/gate';
 import type { PromptManager } from '../approval/prompts';
 import type { DownloadSeen, DownloadWatcher } from '../browser/downloads';
 import { NavGuard } from '../browser/navguard';
+import type { CapturedDownload } from '../browser/navguard';
 import type { SessionManager } from '../browser/sessions';
 import type { TabSession } from '../browser/tab-session';
 import type { TabRegistry } from '../browser/tabs';
@@ -47,6 +48,8 @@ export class ActionContext implements GateContext {
   private paused = 0;
   private authLeft: number;
   private readonly downloadJobs: Array<Promise<DownloadOutcome>> = [];
+  /** 这个请求期间在响应阶段截下过的下载网址。 */
+  private readonly capturedUrls = new Set<string>();
 
   constructor(readonly request: RequestFrame, readonly services: Services, outer: AbortSignal) {
     this.deadlineLeft = request.deadline_ms;
@@ -122,8 +125,13 @@ export class ActionContext implements GateContext {
       throw new ActionError('user_stopped', STOPPED_MESSAGE);
     }
 
+    await reloadIfDiscarded(tabId, this.signal);
     const s = await this.services.sessions.get(tabId);
     s.onDownloadWillBegin = (p) => this.services.downloads.hint(tabId, p.url, p.suggestedFilename);
+    // 浏览器省电时会冻结后台页面，冻结的页面里点击等输入一直不返回（实测）：先解冻。
+    await s.cdp.send('Page.setWebLifecycleState', { state: 'active' }).catch(() => undefined);
+    // 量不出来（页面正在跳转）不挡动作：后面读页面时会重新装代理。
+    await s.ensureViewport().catch(() => undefined);
     return s;
   }
 
@@ -177,10 +185,27 @@ export class ActionContext implements GateContext {
    * 页面弹出对话框时不再等（页面脚本被它阻塞），对话框随结果的 page.dialog 交给模型。
    */
   async guarded<T>(s: TabSession, step: () => Promise<T>): Promise<T> {
-    const guard = new NavGuard(s, (site) => this.decideNavigation(site));
-    await guard.enable();
-    const disarm = this.services.downloads.arm(s.tabId, (d) => this.downloadJobs.push(this.handleDownload(s, d)));
     const watch = new NavWatch(s);
+    const guard = new NavGuard(s, {
+      decide: (site) => this.decideNavigation(site),
+      download: (d) => {
+        // 响应停在拦截里等这一步做完（确认、取内容、送回 Chat），完了才回 204 取消浏览器的下载。
+        const job = this.handleCapturedDownload(s, d);
+        this.downloadJobs.push(job);
+        return job.then(() => undefined);
+      },
+      aborted: () => watch.markAborted(),
+    });
+    await guard.enable();
+    const disarm = this.services.downloads.arm(s.tabId, (d) => {
+      // 表单 POST 触发的下载：响应阶段已经截下并回了 204，浏览器仍会用同一份响应再建一个下载（实测；
+      // 服务端只收到一次 POST）。下载拦截那边已经把它取消、从列表里抹掉，这里不再重复确认。
+      if (this.capturedUrls.has(d.url)) {
+        return;
+      }
+
+      this.downloadJobs.push(this.handleDownload(s, d));
+    });
     const stopWaiting = new AbortController();
 
     try {
@@ -229,17 +254,59 @@ export class ActionContext implements GateContext {
     return false;
   }
 
-  /** 下载：逐次确认 → 页面里带登录态重新取 → 送回 Chat 存成交付文件。 */
-  private async handleDownload(s: TabSession, d: DownloadSeen): Promise<DownloadOutcome> {
-    const site = siteOf(await currentUrl(s.tabId)) ?? siteOf(d.url) ?? '';
-    const detail = { filename: d.filename, size: d.size, content_type: d.contentType };
+  /** 下载的逐次确认（kind=download）：发起站点是当前页的站点。返回是否允许。 */
+  private async confirmDownload(s: TabSession, url: string, filename: string, size: number | null, contentType: string): Promise<boolean> {
+    const site = siteOf(await currentUrl(s.tabId).catch(() => '')) ?? siteOf(url) ?? '';
+    const detail = { filename, size, content_type: contentType };
     const r = await this.services.gate.confirm(this, { kind: 'download', site, reviewDetail: detail, promptDetail: detail });
-    if (r.result !== 'allow') {
+    return r.result === 'allow';
+  }
+
+  /** 送回 Chat 存成交付文件。 */
+  private async deliverDownload(name: string, contentType: string, bytes: Uint8Array<ArrayBuffer>): Promise<DownloadOutcome> {
+    const transport = this.services.transport();
+    if (!transport) {
+      return { error: new ActionError('action_failed', 'The download could not be sent to the conversation because the browser is not connected.') };
+    }
+
+    const max = this.services.maxFileBytes();
+    if (max > 0 && bytes.length > max) {
+      return { error: new ActionError('file_too_large', 'The downloaded file is larger than the size limit for files in the conversation.') };
+    }
+
+    const type = contentType.split(';')[0]?.trim() || 'application/octet-stream';
+    const { file_id } = await transport.sendFile(this.requestId, { kind: 'download', name, contentType: type, data: new Blob([bytes], { type }) });
+    return { file: { file_id, kind: 'download', name, size: bytes.length, content_type: type } };
+  }
+
+  /** 导航类下载（响应阶段截下的）：逐次确认 → 取响应体 → 送回 Chat。 */
+  private async handleCapturedDownload(s: TabSession, d: CapturedDownload): Promise<DownloadOutcome> {
+    this.capturedUrls.add(d.url);
+    const name = filenameFromDisposition(d.disposition) || filenameFromUrl(d.url);
+    const max = this.services.maxFileBytes();
+    if (max > 0 && d.size !== null && d.size > max) {
+      return { error: new ActionError('file_too_large', 'The downloaded file is larger than the size limit for files in the conversation.') };
+    }
+
+    if (!await this.confirmDownload(s, d.url, name, d.size, d.contentType)) {
       return { denied: true };
     }
 
-    const transport = this.services.transport();
-    if (!transport) {
+    try {
+      const body = await d.body();
+      return await this.deliverDownload(name, d.contentType, new Uint8Array(body));
+    } catch {
+      return { error: new ActionError('action_failed', 'The download started, but the extension could not retrieve the file.') };
+    }
+  }
+
+  /** 不经导航的下载（`<a download>` 等）：逐次确认 → 页面里带登录态重新取 → 送回 Chat 存成交付文件。 */
+  private async handleDownload(s: TabSession, d: DownloadSeen): Promise<DownloadOutcome> {
+    if (!await this.confirmDownload(s, d.url, d.filename, d.size, d.contentType)) {
+      return { denied: true };
+    }
+
+    if (!this.services.transport()) {
       return { error: new ActionError('action_failed', 'The download could not be sent to the conversation because the browser is not connected.') };
     }
 
@@ -269,9 +336,7 @@ export class ActionContext implements GateContext {
     }
 
     const name = filenameFromDisposition(meta.disposition ?? '') || d.filename;
-    const contentType = (meta.contentType || d.contentType || 'application/octet-stream').split(';')[0]?.trim() || 'application/octet-stream';
-    const { file_id } = await transport.sendFile(this.requestId, { kind: 'download', name, contentType, data: new Blob([bytes], { type: contentType }) });
-    return { file: { file_id, kind: 'download', name, size, content_type: contentType } };
+    return this.deliverDownload(name, meta.contentType || d.contentType || 'application/octet-stream', bytes);
   }
 
   private startDeadline(): void {
@@ -296,7 +361,7 @@ export function abortError(signal: AbortSignal): ActionError {
   return new ActionError('timeout', reason?.message ?? 'The browser action took too long and was stopped.');
 }
 
-function abortPromise(signal: AbortSignal): Promise<never> {
+export function abortPromise(signal: AbortSignal): Promise<never> {
   return new Promise((_, reject) => {
     if (signal.aborted) {
       reject(abortError(signal));
@@ -305,6 +370,38 @@ function abortPromise(signal: AbortSignal): Promise<never> {
 
     signal.addEventListener('abort', () => reject(abortError(signal)), { once: true });
   });
+}
+
+/**
+ * 后台标签被浏览器丢弃（省内存）后没有页面进程，附着不上也读不了：先重新加载，等加载完。重新加载的是
+ * 它原来的网址，站点没有变。
+ */
+async function reloadIfDiscarded(tabId: number, signal: AbortSignal): Promise<void> {
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    throw new ActionError('no_tab', 'The browser tab for this conversation was closed; use browser_open to open a new one.');
+  }
+
+  if (!tab.discarded) {
+    return;
+  }
+
+  await chrome.tabs.reload(tabId);
+  const until = Date.now() + 15_000;
+  while (!signal.aborted && Date.now() < until) {
+    const now = await chrome.tabs.get(tabId).catch(() => null);
+    if (!now) {
+      throw new ActionError('no_tab', 'The browser tab for this conversation was closed; use browser_open to open a new one.');
+    }
+
+    if (!now.discarded && now.status === 'complete') {
+      return;
+    }
+
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 export async function currentUrl(tabId: number): Promise<string> {
@@ -350,6 +447,16 @@ export function filenameFromDisposition(header: string): string {
   return plain?.[1] ? sanitizeFilename(plain[1].trim()) : '';
 }
 
+/** 网址最后一段当文件名（响应头里没有时）。 */
+export function filenameFromUrl(url: string): string {
+  try {
+    const last = new URL(url).pathname.split('/').filter(Boolean).pop();
+    return sanitizeFilename(last ? decodeURIComponent(last) : 'download');
+  } catch {
+    return 'download';
+  }
+}
+
 /** 文件名去掉路径分隔与控制字符，限长。 */
 export function sanitizeFilename(name: string): string {
   // eslint-disable-next-line no-control-regex
@@ -357,7 +464,7 @@ export function sanitizeFilename(name: string): string {
   return [...cleaned].slice(0, 200).join('') || 'file';
 }
 
-/** 等页面稳定：动作之后短暂等导航开始，开始了就等加载完。 */
+/** 等页面稳定：动作之后短暂等导航开始，开始了就等加载完（或等到它被取消）。 */
 class NavWatch {
   private started = false;
   private stopped = false;
@@ -369,13 +476,22 @@ class NavWatch {
         return;
       }
 
-      if (method === 'Page.frameRequestedNavigation' || method === 'Page.frameStartedLoading') {
+      // 下载链接也会先报一次「请求导航」（disposition=download），页面并不跳转。
+      if (method === 'Page.frameRequestedNavigation' && params.disposition !== 'download') {
+        this.started = true;
+        this.stopped = false;
+      } else if (method === 'Page.frameStartedLoading') {
         this.started = true;
         this.stopped = false;
       } else if (method === 'Page.frameStoppedLoading') {
         this.stopped = true;
       }
     });
+  }
+
+  /** 导航被导航拦截回 204 取消了：不会再有加载完成的事件，别等。 */
+  markAborted(): void {
+    this.stopped = true;
   }
 
   async settle(maxMs: number, signal: AbortSignal): Promise<void> {
