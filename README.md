@@ -39,9 +39,16 @@ PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/
 manifest 里的 `key` 固定了开发者模式的插件 id：**`agagklnjfndomhambbpfhenaoclcbpmo`**，平台的
 `browserExtension.allowedExtensionIds` 要登记它（商店上架后商店会给另外的 id，也要登记）。对应的私钥不在仓库里。
 
-权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`，以及平台地址的主机权限。不申请 `cookies`、
-`proxy`、`management`，不声明 `externally_connectable`，不注册内容脚本。安装时浏览器会提示「读取和更改所有网站上的
-数据」，来自 `debugger` 权限。
+权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`、`cookies`，以及平台地址的主机权限。`cookies` 只用来
+监听平台站点会话 Cookie 的变化：同一台浏览器上退出登录、换人登录时一变就断开重连（`src/connection/cookie-watch.ts`），
+不读写 Cookie，构建后会检查产物里没有读写 Cookie 的调用；Chrome 只把主机权限覆盖的站点的 Cookie 事件交给插件，插件的
+主机权限只有平台地址。不申请 `proxy`、`management`，不声明 `externally_connectable`，不注册内容脚本。安装时浏览器会
+提示「读取和更改所有网站上的数据」，来自 `debugger` 权限。
+
+收会话 Cookie 的变化事件有两个前提（实测）：平台地址不带端口（Chrome 按 `<协议>://<域>/` 判主机权限，主机权限里带了
+端口就一条都收不到）；平台是 https 时网关下发的会话 Cookie 要带 Secure（事件网址的协议看 Cookie 有没有 Secure）。
+本机联调要用带端口的地址时，按不带端口的主机名构建（如 `--platform-origin http://chat.test`），再给 Chromium 加
+`--host-resolver-rules="MAP chat.test 127.0.0.1:<端口>"`。
 
 ## 测试
 

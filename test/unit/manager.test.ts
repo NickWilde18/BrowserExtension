@@ -209,6 +209,62 @@ describe('ConnectionManager', () => {
     expect(server.opens).toBe(opens + 1);
   });
 
+  // 平台会话 Cookie 变了（同一台浏览器上退出登录、重新登录、换人登录，见 cookie-watch.ts）：网关只在请求开始时校验会话，
+  // 已经开着的下行连接要插件自己断开重连，网关才按此刻的会话重新判。
+  it('会话变了：连着时立刻断开重连；等登录时不等退避；停在 replaced、protocol_unsupported、插件没登记时不动', async () => {
+    const { m, server } = setup(0.999);
+    m.start();
+    await tick();
+    server.deliver(READY);
+    expect(m.connected).toBe(true);
+
+    let opens = server.opens;
+    m.sessionChanged();
+    await tick(0);
+    expect(server.opens).toBe(opens + 1);
+    expect(m.status.state).toBe('connecting');
+    server.deliver(READY);
+    expect(m.connected).toBe(true);
+
+    // 退出登录之后：重连拿到 401，在退避里等登录。重新登录（会话 Cookie 又变了）就立刻重连，不等退避。
+    server.failNextOpen = 'unauthenticated';
+    m.sessionChanged();
+    await tick(0);
+    expect(m.status).toMatchObject({ state: 'waiting_login', lastError: 'unauthenticated' });
+    expect(m.status.retryAt! - Date.now()).toBeGreaterThan(0);
+    opens = server.opens;
+    m.sessionChanged();
+    await tick(0);
+    expect(server.opens).toBe(opens + 1);
+    server.deliver(READY);
+    expect(m.connected).toBe(true);
+
+    for (const [label, stopIt] of [
+      ['replaced', () => server.deliver({ type: 'closed', reason: 'replaced' })],
+      ['protocol_unsupported', () => server.deliver({ type: 'closed', reason: 'protocol_unsupported' })],
+    ] as const) {
+      stopIt();
+      expect(m.status.state, label).toBe(label);
+      opens = server.opens;
+      m.sessionChanged();
+      await tick(120_000);
+      expect(server.opens, label).toBe(opens);
+      m.reconnectNow();
+      await tick(0);
+      server.deliver(READY);
+      expect(m.connected, label).toBe(true);
+    }
+
+    server.failNextOpen = 'origin_not_allowed';
+    m.reconnectNow();
+    await tick(0);
+    expect(m.status).toMatchObject({ state: 'error', lastError: 'origin_not_allowed' });
+    opens = server.opens;
+    m.sessionChanged();
+    await tick(120_000);
+    expect(server.opens).toBe(opens);
+  });
+
   describe('ready 之后先做完 beforeReady（账号变了先清上一个账号的状态，补充约定 4）才算连上', () => {
     function withHook(hook: (account: string) => Promise<void>) {
       const server = new FakeServer();

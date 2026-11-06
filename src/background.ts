@@ -13,6 +13,7 @@ import { IDLE_DETACH_MS, PLATFORM_ORIGIN } from './config';
 import { ConnectionManager } from './connection/manager';
 import type { ConnectionStatus } from './connection/manager';
 import { AccountWatch } from './connection/account';
+import { watchSessionCookie } from './connection/cookie-watch';
 import { FakeServer, FakeTransport } from './connection/fake-transport';
 import { FetchTransport } from './connection/fetch-transport';
 import type { Transport } from './connection/transport';
@@ -151,6 +152,14 @@ const manager = new ConnectionManager({
   keepAlive: () => {
     void chrome.runtime.getPlatformInfo();
   },
+});
+
+// 平台会话 Cookie 变了（同一台浏览器上退出登录、重新登录、换人登录）：断开重连，让网关按此刻的会话重新校验（计划第 9 节
+// 第 17 条）。只看事件是不是平台站点的 HttpOnly Cookie，不读值（cookie-watch.ts）。在顶层注册，休眠的后台会被它唤醒。
+watchSessionCookie({
+  platformHost: new URL(PLATFORM_ORIGIN).hostname,
+  addListener: (listener) => chrome.cookies.onChanged.addListener(listener),
+  onSessionCookieChanged: () => manager.sessionChanged(),
 });
 
 const gate = new Gate({

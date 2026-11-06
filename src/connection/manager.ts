@@ -148,6 +148,20 @@ export class ConnectionManager {
     void this.connect();
   }
 
+  /**
+   * 平台会话变了（会话 Cookie 变化，见 cookie-watch.ts）：断开当前连接、立刻重连，让网关按此刻的会话重新校验；等登录
+   * 的退避也不再等。停在 replaced、protocol_unsupported、插件没登记（origin_not_allowed）时不动：换个会话解决不了，
+   * 要用户在弹窗里处理。
+   */
+  sessionChanged(): void {
+    const { state, lastError } = this.stateValue;
+    if (!this.started || state === 'replaced' || state === 'protocol_unsupported' || (state === 'error' && lastError === 'origin_not_allowed')) {
+      return;
+    }
+
+    this.reconnectNow();
+  }
+
   /** 发一帧；没连上时抛 TransportError('not_connected')。 */
   async send(frame: OutboundFrame): Promise<void> {
     const t = this.transport;

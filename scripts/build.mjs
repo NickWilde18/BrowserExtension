@@ -116,6 +116,16 @@ if (!testHooks) {
   if (/x-service/i.test(bg)) {
     throw new Error('生产构建的 background.js 里出现了 X-Service');
   }
+
+  // cookies 权限只用来监听会话 Cookie 的变化（计划第 9 节第 17 条）：产物里只能有 onChanged，不能有读写 Cookie 的调用。
+  const cookieCalls = bg.match(/cookies\s*\.\s*(get|getAll|set|remove|getAllCookieStores|getPartitionKey)\b/g);
+  if (cookieCalls) {
+    throw new Error(`生产构建的 background.js 里出现了读写 Cookie 的调用：${[...new Set(cookieCalls)].join('、')}`);
+  }
+
+  if (!bg.includes('cookies.onChanged')) {
+    throw new Error('生产构建的 background.js 里没有会话 Cookie 的监听');
+  }
 }
 
 for (const file of ['popup.html', 'popup.css', 'approval.html', 'approval.css']) {

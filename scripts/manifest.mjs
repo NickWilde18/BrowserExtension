@@ -1,7 +1,10 @@
 // manifest 的唯一来源：权限、主机权限、入口都在这里定。
 //
-// 权限按计划 4.5：debugger、tabs、tabGroups、storage、downloads，加平台对外地址的主机权限。
-// 不申请 cookies、proxy、management；不声明 externally_connectable（网页不能给插件发消息）；
+// 权限按计划 4.5：debugger、tabs、tabGroups、storage、downloads、cookies，加平台对外地址的主机权限。
+// cookies 只用来监听平台站点会话 Cookie 的变化、一变就断开重连（计划第 9 节第 17 条，src/connection/cookie-watch.ts），
+// 不读写 Cookie：Chrome 只把主机权限覆盖的站点的 Cookie 事件交给插件，插件的主机权限只有平台地址；构建后检查产物里没有
+// 读写 Cookie 的调用（scripts/build.mjs）。
+// 不申请 proxy、management；不声明 externally_connectable（网页不能给插件发消息）；
 // 不注册内容脚本（页面里的代码只经调试接口按需注入，见 src/browser/frames.ts）。
 
 /**
@@ -29,7 +32,7 @@ export function buildManifest({ version, platformOrigin, key }) {
     key,
     background: { service_worker: 'background.js', type: 'module' },
     action: { default_popup: 'popup.html', default_title: '__MSG_extName__' },
-    permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads'],
+    permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies'],
     host_permissions: [`${platformOrigin}/*`],
   };
 }
