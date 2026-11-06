@@ -17,6 +17,9 @@ import type { OutgoingFile, Transport, TransportHandlers } from './transport';
 /** frames 回 413 时换上的结果说明（补充约定 3）。 */
 export const RESULT_TOO_LARGE_MESSAGE = 'The result was too large to send.';
 
+/** frames 回 400 时换上的结果说明：Chat 认为这个结果不合法，原样重发还是 400。 */
+export const RESULT_UNDELIVERABLE_MESSAGE = 'The result could not be delivered.';
+
 /** 失败状态 → 原因（契约 2.1 的表；与 closed.reason 同一套取值，连接状态机按它决定下一步）。 */
 function reasonForStatus(status: number): string {
   switch (status) {
@@ -61,14 +64,17 @@ export class FetchTransport implements Transport {
     }
 
     let res = await this.postFrame(frame);
-    if (res.status === 413 && frame.type === 'result') {
-      // 结果超过 frames 的上限（9 MiB，补充约定 3）：换成一个错误结果再发一次。截图、快照等大结果在动作里已按
-      // 契约第 4 节截断，正常走不到这里。
-      res = await this.postFrame({ type: 'result', request_id: frame.request_id, outcome: 'error', code: 'action_failed', message: RESULT_TOO_LARGE_MESSAGE });
+    if ((res.status === 413 || res.status === 400) && frame.type === 'result') {
+      // 413：结果超过 frames 的上限（9 MiB，补充约定 3）；400：Chat 认为这个结果不合法，原样重发还是 400。都换成一个
+      // 不带 page、payload 的错误结果再发一次（只发一次），Chat 那边拿到结果、不用等到超时。截图、快照等大结果在动作里
+      // 已按契约第 4 节截断，正常走不到 413。
+      const message = res.status === 413 ? RESULT_TOO_LARGE_MESSAGE : RESULT_UNDELIVERABLE_MESSAGE;
+      res = await this.postFrame({ type: 'result', request_id: frame.request_id, outcome: 'error', code: 'action_failed', message });
     }
 
-    // 403 / 404：请求不属于这个安装、或已经结束（多半是 Chat 已放弃的请求），丢弃这一帧。
-    if (res.ok || res.status === 403 || res.status === 404) {
+    // 400：这一帧不合法，重发还是 400，丢掉（契约 2.1）。403 / 404：请求不属于这个安装、或已经结束（多半是 Chat
+    // 已放弃的请求），丢掉。
+    if (res.ok || res.status === 400 || res.status === 403 || res.status === 404) {
       return;
     }
 

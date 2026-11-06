@@ -143,6 +143,32 @@ describe('FetchTransport', () => {
     expect(calls.filter((c) => c.url.endsWith('/frames'))).toHaveLength(1);
   });
 
+  it('frames 回 400 的是结果帧：不重发原帧，改发一次不带 page / payload 的 action_failed；这一次也是 400 就丢掉、不报错', async () => {
+    const s = ndjson([]);
+    const statuses = [400, 400];
+    const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: statuses.shift() ?? 200 })));
+    const t = new FetchTransport(ORIGIN);
+    await t.open({ onFrame: () => undefined, onClose: () => undefined });
+    await t.send(HELLO);
+    const bad = { type: 'result' as const, request_id: '11111111-2222-4333-8444-555555555555', outcome: 'ok' as const, payload: { snapshot: 'x' } };
+    await t.send(bad);
+    const posted = calls.filter((c) => c.url.endsWith('/frames')).map((c) => JSON.parse(String(c.init.body)));
+    expect(posted).toEqual([
+      { install_id: INSTALL, frame: bad },
+      { install_id: INSTALL, frame: { type: 'result', request_id: bad.request_id, outcome: 'error', code: 'action_failed', message: 'The result could not be delivered.' } },
+    ]);
+  });
+
+  it('frames 回 400 的不是结果帧：丢掉，不报错、不重发', async () => {
+    const s = ndjson([]);
+    const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: 400 })));
+    const t = new FetchTransport(ORIGIN);
+    await t.open({ onFrame: () => undefined, onClose: () => undefined });
+    await t.send(HELLO);
+    await t.send({ type: 'progress', request_id: '11111111-2222-4333-8444-555555555555', stage: 'working' });
+    expect(calls.filter((c) => c.url.endsWith('/frames'))).toHaveLength(1);
+  });
+
   it('上行帧发到 frames（带 install_id）；403 / 404 丢弃这一帧不报错；其余失败报错', async () => {
     const s = ndjson([]);
     const statuses = [204, 403, 404, 500];

@@ -89,7 +89,7 @@ describe('ConnectionManager', () => {
     expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
   });
 
-  it('closed.replaced 不重连；server_shutdown 立刻重连（不退避，补充约定 5）；unauthenticated 等登录', async () => {
+  it('closed.replaced 不重连；server_shutdown 3 秒内重连（不退避）；unauthenticated 等登录', async () => {
     const { m, server, statuses } = setup();
     m.start();
     await tick();
@@ -107,7 +107,7 @@ describe('ConnectionManager', () => {
     expect(m.connected).toBe(true);
     const beforeShutdown = server.opens;
     server.deliver({ type: 'closed', reason: 'server_shutdown' });
-    await tick(0);
+    await tick(3000);
     expect(server.opens).toBe(beforeShutdown + 1);
     server.deliver(READY);
     expect(m.status.state).toBe('connected');
@@ -171,6 +171,27 @@ describe('ConnectionManager', () => {
     await tick(0);
     expect(server.opens).toBe(opens + 1);
     expect(m.status.state).toBe('connecting');
+  });
+
+  it('closed.server_shutdown（Chat 副本退出）：在 0–3 秒里随机等一下再重连，不退避、不算失败次数', async () => {
+    // 那个副本上的插件同时断开：不错开的话会同一时刻一起连上来。random 取两头各测一次。
+    for (const [random, delay] of [[0, 0], [0.999, 2997]] as const) {
+      const { m, server } = setup(random);
+      m.start();
+      await tick();
+      server.deliver(READY);
+      const opens = server.opens;
+      server.deliver({ type: 'closed', reason: 'server_shutdown' });
+      expect(m.status).toMatchObject({ state: 'offline', lastError: 'server_shutdown' });
+      expect(m.status.retryAt! - Date.now()).toBe(delay);
+      if (delay > 0) {
+        await tick(delay - 1);
+        expect(server.opens).toBe(opens);
+      }
+
+      await tick(1);
+      expect(server.opens).toBe(opens + 1);
+    }
   });
 
   it('stream 上 403（来源没登记）：停止重连并提示，弹窗「重新连接」才再试', async () => {

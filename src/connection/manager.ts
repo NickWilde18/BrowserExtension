@@ -1,7 +1,7 @@
 // 连接状态机（与传输方式无关）：hello → ready、心跳超时、指数退避重连、closed.reason 的处理、保活。
 // 契约见 Chat 仓 docs/BROWSER_EXTENSION.md 3.1。
 //
-// 连接是插件自己发起的：rotate、server_shutdown 之后立刻重连，断线之后按退避重连，每一条新连接上来的请求类帧
+// 连接是插件自己发起的：rotate 之后立刻重连、server_shutdown 之后 0–3 秒随机等一下再连，断线之后按退避重连，每一条新连接上来的请求类帧
 // 都照常交出（旧连接上开始的请求，它的 cancel、approval 可能从新连接来）。ready 之后先做完 beforeReady（账号
 // 变了先清上一个账号的状态）才算连上。
 //
@@ -82,6 +82,8 @@ export interface ManagerDeps {
 
 const MIN_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 60_000;
+/** closed{server_shutdown} 之后重连前随机等待的上限。 */
+const SHUTDOWN_JITTER_MS = 3_000;
 
 export class ConnectionManager {
   private readonly timers: Timers;
@@ -303,11 +305,16 @@ export class ConnectionManager {
         this.setState({ state: 'protocol_unsupported', lastError: reason });
         return;
       case 'rotate':
-      case 'server_shutdown':
-        // 下行连接到了寿命（契约 2.2，Chat 每条连接最多 5 分钟）、Chat 副本退出：立刻重连，不退避、不算失败次数。
-        // Chat 这两种情况下保留在线标记，空档里发来的请求改投到新连接（补充约定 5）。
+        // 下行连接到了寿命（契约 2.2，Chat 每条连接最多 5 分钟）：立刻重连，不退避、不算失败次数；各连接到点的时刻本来
+        // 就错开。Chat 这时保留在线标记，空档里发来的请求改投到新连接（补充约定 5）。
         this.attempt = 0;
         this.scheduleRetry(0, 'offline', reason);
+        return;
+      case 'server_shutdown':
+        // Chat 副本退出：那个副本上的插件同时断开，在 0–3 秒里随机等一下再重连，免得同一时刻一起连上来（契约 2.2）。
+        // 不退避、不算失败次数；Chat 同样保留在线标记、改投空档里的请求。
+        this.attempt = 0;
+        this.scheduleRetry(Math.floor(this.random() * SHUTDOWN_JITTER_MS), 'offline', reason);
         return;
       case 'unauthenticated':
         // 没有登录态（stream 回 401；Chat 不发 closed{unauthenticated}）：提示用户在平台网页上重新登录，之后按退避
