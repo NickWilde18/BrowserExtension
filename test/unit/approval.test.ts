@@ -5,11 +5,13 @@ import type { GateContext } from '../../src/approval/gate';
 import { PromptManager } from '../../src/approval/prompts';
 import type { WindowOps } from '../../src/approval/prompts';
 import { ApprovalRegistry } from '../../src/approval/registry';
+import { FakeServer, FakeTransport } from '../../src/connection/fake-transport';
+import { ConnectionManager } from '../../src/connection/manager';
 import type { OutboundFrame } from '../../src/protocol/frames';
 
 const RID = '11111111-2222-4333-8444-555555555555';
 
-describe('ApprovalRegistry：放行只认自己连接上、自己发出的请求', () => {
+describe('ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind）', () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -20,43 +22,103 @@ describe('ApprovalRegistry：放行只认自己连接上、自己发出的请求
 
   it('对得上的 approval 交出结论', async () => {
     const reg = new ApprovalRegistry();
-    const { approvalId, verdict } = reg.expect(RID, 'script', 3, 15_000);
-    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'script', decision: 'allow' }, 3);
+    const { approvalId, verdict } = reg.expect(RID, 'script', 15_000);
+    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'script', decision: 'allow' });
     await expect(verdict).resolves.toEqual({ decision: 'allow' });
   });
 
   it.each([
-    ['request_id 不对', { request_id: '99999999-2222-4333-8444-555555555555' }, 3],
-    ['不是这条连接', {}, 4],
-    ['kind 与发出时不同', { kind: 'site' }, 3],
-    ['kind 不在五类里', { kind: 'cookies' }, 3],
-    ['decision 不认识', { decision: 'yes' }, 3],
-  ])('%s → ask_user', async (_name, patch, epoch) => {
+    ['request_id 不对', { request_id: '99999999-2222-4333-8444-555555555555' }],
+    ['kind 与发出时不同', { kind: 'site' }],
+    ['kind 不在五类里', { kind: 'cookies' }],
+    ['decision 不认识', { decision: 'yes' }],
+  ])('%s → ask_user', async (_name, patch) => {
     const reg = new ApprovalRegistry();
-    const { approvalId, verdict } = reg.expect(RID, 'script', 3, 15_000);
-    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'script', decision: 'allow', ...patch } as never, epoch);
+    const { approvalId, verdict } = reg.expect(RID, 'script', 15_000);
+    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'script', decision: 'allow', ...patch } as never);
     await expect(verdict).resolves.toEqual({ decision: 'ask_user' });
   });
 
-  it('不认识的 approval_id 忽略；15 秒没回按 ask_user；连接断开按 ask_user', async () => {
+  it('不认识的 approval_id 忽略；15 秒没回按 ask_user，之后再来的放行不算数', async () => {
     const reg = new ApprovalRegistry();
-    const a = reg.expect(RID, 'site', 1, 15_000);
-    reg.receive({ type: 'approval', request_id: RID, approval_id: 'a999-zzz', kind: 'site', decision: 'allow' }, 1);
+    const a = reg.expect(RID, 'site', 15_000);
+    reg.receive({ type: 'approval', request_id: RID, approval_id: 'a999-zzz', kind: 'site', decision: 'allow' });
     vi.advanceTimersByTime(15_000);
     await expect(a.verdict).resolves.toEqual({ decision: 'ask_user' });
-
-    const b = reg.expect(RID, 'site', 2, 15_000);
-    reg.dropEpoch(2);
-    await expect(b.verdict).resolves.toEqual({ decision: 'ask_user' });
-    // 之后再来的放行不算数。
-    reg.receive({ type: 'approval', request_id: RID, approval_id: b.approvalId, kind: 'site', decision: 'allow' }, 2);
+    reg.receive({ type: 'approval', request_id: RID, approval_id: a.approvalId, kind: 'site', decision: 'allow' });
+    await expect(a.verdict).resolves.toEqual({ decision: 'ask_user' });
   });
 
   it('block 带理由', async () => {
     const reg = new ApprovalRegistry();
-    const { approvalId, verdict } = reg.expect(RID, 'upload', 1, 15_000);
-    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'upload', decision: 'block', reason: 'unknown site' }, 1);
+    const { approvalId, verdict } = reg.expect(RID, 'upload', 15_000);
+    reg.receive({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'upload', decision: 'block', reason: 'unknown site' });
     await expect(verdict).resolves.toEqual({ decision: 'block', reason: 'unknown site' });
+  });
+});
+
+describe('旧连接上开始的请求，它的 approval / cancel 从后来的连接到达（补充约定 1）', () => {
+  const READY = { type: 'ready', protocol: 1, heartbeat_seconds: 20, account: 'one@example.test', max_file_bytes: 1000 };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 与 background 相同的分派：approval 交给审批登记，cancel 交给调度（这里记下来）。 */
+  function wire() {
+    const server = new FakeServer();
+    const registry = new ApprovalRegistry();
+    const cancelled: string[] = [];
+    const m = new ConnectionManager({
+      transportFactory: () => new FakeTransport(server),
+      hello: async () => ({ type: 'hello', protocol: 1, install_id: RID, display_name: 'Chrome · Linux', extension_version: '0.1.0' }),
+      onFrame: (f) => {
+        if (f.type === 'approval') {
+          registry.receive(f);
+        } else if (f.type === 'cancel') {
+          cancelled.push(f.request_id);
+        }
+      },
+      onStatus: () => undefined,
+      keepAlive: () => undefined,
+      random: () => 0.5,
+    });
+    return { server, registry, m, cancelled };
+  }
+
+  it('审查结论从轮换（rotate）后的新连接到达：照认', async () => {
+    const { server, registry, m } = wire();
+    m.start();
+    await vi.advanceTimersByTimeAsync(0);
+    server.deliver(READY);
+    const { approvalId, verdict } = registry.expect(RID, 'download', 15_000);
+
+    server.deliver({ type: 'closed', reason: 'rotate' });
+    await vi.advanceTimersByTimeAsync(0);
+    server.deliver(READY);
+    server.deliver({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'download', decision: 'allow' });
+    await expect(verdict).resolves.toEqual({ decision: 'allow' });
+  });
+
+  it('断线重连之后也一样：等结论期间连接断了不按 ask_user，新连接上来的结论照认；cancel 同样按 request_id 认', async () => {
+    const { server, registry, m, cancelled } = wire();
+    m.start();
+    await vi.advanceTimersByTimeAsync(0);
+    server.deliver(READY);
+    const { approvalId, verdict } = registry.expect(RID, 'site', 15_000);
+
+    server.drop();
+    await vi.advanceTimersByTimeAsync(m.status.retryAt! - Date.now());
+    server.deliver(READY);
+    expect(m.status.state).toBe('connected');
+    server.deliver({ type: 'approval', request_id: RID, approval_id: approvalId, kind: 'site', decision: 'block', reason: 'r' });
+    server.deliver({ type: 'cancel', request_id: RID });
+    await expect(verdict).resolves.toEqual({ decision: 'block', reason: 'r' });
+    expect(cancelled).toEqual([RID]);
   });
 });
 
@@ -107,7 +169,7 @@ async function until(cond: () => boolean): Promise<void> {
 }
 
 describe('Gate：先问审查、再问用户', () => {
-  function setup(opts: { autoMode: boolean; epoch: number; reply?: 'allow' | 'block' | 'ask_user' | null }) {
+  function setup(opts: { autoMode: boolean; connected: boolean; reply?: 'allow' | 'block' | 'ask_user' | null }) {
     const sentFrames: OutboundFrame[] = [];
     const registry = new ApprovalRegistry();
     const windows = new FakeWindows();
@@ -116,11 +178,11 @@ describe('Gate：先问审查、再问用户', () => {
       registry,
       prompts,
       autoMode: async () => opts.autoMode,
-      epoch: () => opts.epoch,
+      connected: () => opts.connected,
       send: async (f) => {
         sentFrames.push(f);
         if (f.type === 'approval_request' && opts.reply) {
-          queueMicrotask(() => registry.receive({ type: 'approval', request_id: f.request_id, approval_id: f.approval_id, kind: f.kind, decision: opts.reply as 'allow', reason: 'r1' }, opts.epoch));
+          queueMicrotask(() => registry.receive({ type: 'approval', request_id: f.request_id, approval_id: f.approval_id, kind: f.kind, decision: opts.reply as 'allow', reason: 'r1' }));
         }
       },
     });
@@ -128,7 +190,7 @@ describe('Gate：先问审查、再问用户', () => {
   }
 
   it('审查放行：不弹小窗、不发进度，计时暂停又恢复', async () => {
-    const { gate, windows, sentFrames } = setup({ autoMode: true, epoch: 1, reply: 'allow' });
+    const { gate, windows, sentFrames } = setup({ autoMode: true, connected: true, reply: 'allow' });
     const ctx = gateCtx();
     const r = await gate.confirm(ctx, { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     expect(r).toEqual({ result: 'allow', by: 'review', scope: 'conversation' });
@@ -138,7 +200,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('审查拦下：小窗带理由，用户定；前后发 awaiting_user / working', async () => {
-    const { gate, prompts, windows, sentFrames } = setup({ autoMode: true, epoch: 1, reply: 'block' });
+    const { gate, prompts, windows, sentFrames } = setup({ autoMode: true, connected: true, reply: 'block' });
     const p = gate.confirm(gateCtx(), { kind: 'script', site: 'https://a.test', reviewDetail: { source: 'x' }, promptDetail: { source: 'x' } });
     await until(() => windows.opened.length > 0);
     const w = windows.opened[0]!;
@@ -154,14 +216,14 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('开关关掉或没连上：不发审批请求，直接问用户；站点的两种允许映射到范围', async () => {
-    const off = setup({ autoMode: false, epoch: 1, reply: 'allow' });
+    const off = setup({ autoMode: false, connected: true, reply: 'allow' });
     const p1 = off.gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     await until(() => off.windows.opened.length > 0);
     off.prompts.answer(off.windows.opened[0]!.id, off.windows.opened[0]!.windowId, 'allow_always');
     await expect(p1).resolves.toMatchObject({ result: 'allow', scope: 'always' });
     expect(off.sentFrames.some((f) => f.type === 'approval_request')).toBe(false);
 
-    const offline = setup({ autoMode: true, epoch: 0, reply: 'allow' });
+    const offline = setup({ autoMode: true, connected: false, reply: 'allow' });
     const p2 = offline.gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     await until(() => offline.windows.opened.length > 0);
     offline.prompts.answer(offline.windows.opened[0]!.id, offline.windows.opened[0]!.windowId, 'allow_once');
@@ -170,7 +232,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('等用户超时、用户关掉小窗都按拒绝', async () => {
-    const { gate, prompts, windows } = setup({ autoMode: false, epoch: 1 });
+    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
     await expect(gate.confirm(gateCtx(30), { kind: 'upload', site: 's', reviewDetail: {}, promptDetail: {} }))
       .resolves.toEqual({ result: 'deny', why: 'timeout' });
 
@@ -181,7 +243,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('密码框「我自己输入」：小窗留着，切到完成阶段', async () => {
-    const { gate, prompts, windows } = setup({ autoMode: false, epoch: 1 });
+    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
     const p = gate.confirm(gateCtx(), { kind: 'password', site: 's', reviewDetail: { field: 'pw' }, promptDetail: { field: 'pw' } });
     await until(() => windows.opened.length > 0);
     const w = windows.opened[0]!;

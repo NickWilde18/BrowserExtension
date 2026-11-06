@@ -32,8 +32,8 @@ export interface GateDeps {
   registry: ApprovalRegistry;
   prompts: PromptManager;
   autoMode(): Promise<boolean>;
-  /** 当前可用连接的编号，没连上为 0。 */
-  epoch(): number;
+  /** 现在有没有可用的连接（没连上时不问审查、不发进度）。 */
+  connected(): boolean;
   send(frame: OutboundFrame): Promise<void>;
 }
 
@@ -63,9 +63,8 @@ export class Gate {
   private async run(ctx: GateContext, req: ConfirmRequest, started: number): Promise<ConfirmResult> {
     let reason: string | undefined;
 
-    const epoch = this.deps.epoch();
-    if (epoch > 0 && await this.deps.autoMode()) {
-      const verdict = await this.askReview(ctx, req, epoch);
+    if (this.deps.connected() && await this.deps.autoMode()) {
+      const verdict = await this.askReview(ctx, req);
       if (verdict.decision === 'allow') {
         return { result: 'allow', by: 'review', scope: 'conversation' };
       }
@@ -100,8 +99,8 @@ export class Gate {
     return this.interpret(req.kind, id, outcome);
   }
 
-  private async askReview(ctx: GateContext, req: ConfirmRequest, epoch: number): Promise<{ decision: string; reason?: string }> {
-    const { approvalId, verdict } = this.deps.registry.expect(ctx.requestId, req.kind, epoch, APPROVAL_REPLY_TIMEOUT_MS);
+  private async askReview(ctx: GateContext, req: ConfirmRequest): Promise<{ decision: string; reason?: string }> {
+    const { approvalId, verdict } = this.deps.registry.expect(ctx.requestId, req.kind, APPROVAL_REPLY_TIMEOUT_MS);
     const onAbort = () => this.deps.registry.abandon(approvalId);
     ctx.signal.addEventListener('abort', onAbort, { once: true });
 
@@ -150,7 +149,7 @@ export class Gate {
   }
 
   private async progress(requestId: string, stage: 'awaiting_user' | 'working', kind?: ApprovalKind): Promise<void> {
-    if (this.deps.epoch() === 0) {
+    if (!this.deps.connected()) {
       return;
     }
 

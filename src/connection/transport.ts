@@ -1,7 +1,6 @@
 // 插件与 Chat 之间的传输层接口。
 //
-// 传输绑定待定（Tark#528 计划第 9 节第 11 条：fetch 双向通道 / 票据换 WebSocket / 网关签凭据），
-// 本仓库只定义接口与一个内存实现（fake-transport.ts）；选定后加一个实现，其余代码不用动。
+// 真实实现是 fetch 双向通道（fetch-transport.ts，计划第 9 节第 11 条定为 A2）；fake-transport.ts 是测试用的内存实现。
 //
 // 契约（Chat 仓 docs/BROWSER_EXTENSION.md 第 2 节）里与绑定无关的部分，实现必须满足：
 // - 帧是 JSON 对象，open 之后第一帧由插件发 hello（ConnectionManager 负责）；

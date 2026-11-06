@@ -70,6 +70,12 @@ export class SiteStore {
     await this.session.set(CONVERSATION_KEY, byConversation);
   }
 
+  /** 换了平台账号（补充约定 4）：总是允许与各对话的授权都清掉（那是上一个账号的用户给的）。 */
+  async clear(): Promise<void> {
+    await this.local.remove(ALWAYS_KEY);
+    await this.session.remove(CONVERSATION_KEY);
+  }
+
   async list(): Promise<SiteGrants> {
     return {
       always: (await this.local.get<string[]>(ALWAYS_KEY)) ?? [],

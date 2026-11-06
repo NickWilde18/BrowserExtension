@@ -56,6 +56,7 @@ const pages = {
     <a href="/files/report.txt" id="att">Get the report</a>
     <a href="/files/plain.csv" download="table.csv" id="dl">Get the table</a>
     <a href="${B}/files/report.txt" id="cross">Get the mirrored report</a>
+    <a href="/files/once.csv" download="once.csv" id="once">Get the one-time file</a>
     <form method="post" action="/export"><input name="q" value="2026" aria-label="Year"><button type="submit">Export</button></form>`),
   '/iframe.html': page('Frames', `
     <h1>Frames</h1>
@@ -163,6 +164,19 @@ const server = http.createServer((req, res) => {
       res.setHeader('Content-Disposition', 'attachment; filename="export.csv"');
       res.end(`posted,${body}\n`);
     });
+    return;
+  }
+
+  // 一次性链接：第一次给文件，之后 410（插件在页面里重新取会取不到）。
+  if (url.pathname === '/files/once.csv') {
+    if (hits[key] > 1) {
+      res.statusCode = 410;
+      res.end('gone');
+      return;
+    }
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.end('only,once\n');
     return;
   }
 

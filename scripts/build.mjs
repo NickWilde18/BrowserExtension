@@ -1,10 +1,13 @@
 // 构建插件：打包脚本、生成 manifest、复制静态资源与第三方许可。
 //
 // 用法：
-//   PLATFORM_ORIGIN=https://<平台对外地址> node scripts/build.mjs [--test-hooks] [--out <目录>]
+//   PLATFORM_ORIGIN=https://<平台对外地址> node scripts/build.mjs [--test-hooks [--fake-transport]] [--out <目录>]
+//   node scripts/build.mjs --platform-origin https://<平台对外地址> …
 //
-// - PLATFORM_ORIGIN 必填：插件只知道这一个地址（用户地址栏里那个），manifest 的主机权限由它生成。
-// - --test-hooks 只给端到端测试用：后台暴露测试入口、连接换成内存假传输。生产构建不带。
+// - 平台对外地址必填（--platform-origin 或环境变量 PLATFORM_ORIGIN）：插件只知道这一个地址（用户地址栏里那个），
+//   manifest 的主机权限由它生成，真实传输连它。
+// - --test-hooks 只给端到端测试用：后台暴露测试入口（读状态、预授权站点）。生产构建不带。
+// - --fake-transport 只能和 --test-hooks 一起用：连接换成内存假传输，测试代码扮演 Chat。不带时用真实传输。
 import { build } from 'esbuild';
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -17,10 +20,19 @@ import { extractInjectedSource } from './extract-injected.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const testHooks = args.includes('--test-hooks');
-const outArg = args.indexOf('--out');
-const outDir = path.resolve(root, outArg >= 0 ? args[outArg + 1] : 'dist');
+const fakeTransport = args.includes('--fake-transport');
+if (fakeTransport && !testHooks) {
+  throw new Error('--fake-transport 只给端到端测试用，要和 --test-hooks 一起');
+}
 
-const platformOrigin = parsePlatformOrigin(process.env.PLATFORM_ORIGIN);
+/** `--名字 值` 形式的参数。 */
+function argValue(name) {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+
+const outDir = path.resolve(root, argValue('--out') ?? 'dist');
+const platformOrigin = parsePlatformOrigin(argValue('--platform-origin') ?? process.env.PLATFORM_ORIGIN);
 
 /**
  * 校验平台对外地址：只收 http(s) 的来源（协议 + 主机 + 端口），不带路径、查询、账号。
@@ -28,7 +40,7 @@ const platformOrigin = parsePlatformOrigin(process.env.PLATFORM_ORIGIN);
  */
 function parsePlatformOrigin(raw) {
   if (!raw) {
-    throw new Error('缺少 PLATFORM_ORIGIN（平台对外地址，例如 https://example.edu）');
+    throw new Error('缺少平台对外地址（--platform-origin 或 PLATFORM_ORIGIN，例如 https://example.edu）');
   }
 
   const url = new URL(raw);
@@ -79,6 +91,7 @@ await build({
   define: {
     __PLATFORM_ORIGIN__: JSON.stringify(platformOrigin),
     __TEST_HOOKS__: JSON.stringify(testHooks),
+    __FAKE_TRANSPORT__: JSON.stringify(fakeTransport),
   },
   plugins: [injectedPlugin],
   // 只做语法级压缩（删掉 define 之后的死分支），不改名、不压空白：产物仍可读。
@@ -86,13 +99,22 @@ await build({
   logLevel: 'warning',
 });
 
-// 生产构建里不能有测试用的假传输与测试入口。
+// 生产构建：不能有测试用的假传输与测试入口；要有真实传输，且请求里不带 X-Service 头（契约 2.3：带了网关就
+// 按首段选服务名、扣用户的共用额度）。
 if (!testHooks) {
   const bg = readFileSync(path.join(outDir, 'background.js'), 'utf8');
   for (const marker of ['FakeTransport', 'FakeServer', '__bxTest']) {
     if (bg.includes(marker)) {
       throw new Error(`生产构建的 background.js 里出现了测试代码：${marker}`);
     }
+  }
+
+  if (!bg.includes('/chat-service/browser/')) {
+    throw new Error('生产构建的 background.js 里没有真实传输');
+  }
+
+  if (/x-service/i.test(bg)) {
+    throw new Error('生产构建的 background.js 里出现了 X-Service');
   }
 }
 
@@ -112,4 +134,4 @@ const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
 const manifest = buildManifest({ version: pkg.version, platformOrigin, key: DEV_PUBLIC_KEY });
 writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
-console.log(`built ${path.relative(root, outDir)} platform=${platformOrigin} testHooks=${testHooks} injected=${injected.version}`);
+console.log(`built ${path.relative(root, outDir)} platform=${platformOrigin} testHooks=${testHooks} fakeTransport=${fakeTransport} injected=${injected.version}`);

@@ -5,6 +5,7 @@ export default defineConfig({
   define: {
     __PLATFORM_ORIGIN__: JSON.stringify('https://platform.test'),
     __TEST_HOOKS__: 'false',
+    __FAKE_TRANSPORT__: 'false',
   },
   resolve: {
     alias: {

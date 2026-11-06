@@ -69,7 +69,7 @@ async function executeRequest(services: Services, request: RequestFrame, signal:
 
   const ctx = new ActionContext(request, services, signal);
   try {
-    const adopted = await services.tabs.touch(request.conversation);
+    const adopted = await services.tabs.touch(request.conversation, request.conversation_title);
     if (adopted !== null) {
       // 用户点「共享此页」时还没有对话在用浏览器：共享给了这个对话，等于授权这一页的站点（限本次对话）。
       const site = siteOf(await currentUrl(adopted).catch(() => ''));
@@ -94,8 +94,10 @@ async function executeRequest(services: Services, request: RequestFrame, signal:
       result.payload = out.payload;
     }
 
-    if (out.message) {
-      result.message = out.message;
+    // 动作自己的说明在前，动作过程中记下的（如下载没取回来的原因）在后。
+    const message = [out.message, ...ctx.notes].filter(Boolean).join(' ');
+    if (message) {
+      result.message = message;
     }
 
     if (JSON.stringify(result).length > MAX_RESULT_FRAME_BYTES) {

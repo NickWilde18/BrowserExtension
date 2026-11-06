@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { filenameFromDisposition, sanitizeFilename } from '../../src/actions/context';
 import { imageSize } from '../../src/actions/read';
 import { parseChord } from '../../src/browser/keys';
+import { AccountWatch } from '../../src/connection/account';
 import { TabRegistry } from '../../src/browser/tabs';
 import type { TabOps } from '../../src/browser/tabs';
 import { defaultDisplayName, normalizeDisplayName } from '../../src/identity';
@@ -142,5 +143,80 @@ describe('TabRegistry', () => {
     // 共享页关掉只撤销共享，不关标签。
     expect(await reg.closeTab('c1', 88)).toBe(false);
     expect(ops.closed).toEqual([]);
+  });
+
+  it('「将共享给」：最近用过浏览器的对话及其标题（可为空）；没有时是下一个对话', async () => {
+    const reg = new TabRegistry(new MemoryKV(), new FakeTabs());
+    expect(await reg.shareTarget()).toEqual({ kind: 'next' });
+    await reg.touch('c1', '选课 <b>帮忙</b>');
+    expect(await reg.shareTarget()).toEqual({ kind: 'recent', title: '选课 <b>帮忙</b>' });
+    await reg.touch('c2', '');
+    expect(await reg.shareTarget()).toEqual({ kind: 'recent', title: '' });
+    // 对话结束（browser_close）后，共享给下一个对话：与 share() 同一口径。
+    await reg.release('c2', false);
+    expect(await reg.shareTarget()).toEqual({ kind: 'next' });
+  });
+
+  it('换了平台账号（补充约定 4）：忘掉全部对话，AI 标签不关、只解散组，共享目标与待共享都清掉', async () => {
+    const ops = new FakeTabs();
+    const reg = new TabRegistry(new MemoryKV(), ops);
+    const t1 = await reg.createTab('c1');
+    await reg.touch('c1', '上一个账号的对话');
+    expect(await reg.share(77)).toBe('c1');
+
+    ops.ungroup = async (tabId: number) => {
+      // 解散组时浏览器派发的换组事件：登记已经清掉，不再归任何对话。
+      expect(await reg.onTabGroupChanged(tabId, -1)).toBeNull();
+      ops.ungrouped.push(tabId);
+    };
+    expect(await reg.forgetAll()).toEqual([t1, 77]);
+    expect(ops.ungrouped).toEqual([t1]);
+    expect(ops.closed).toEqual([]);
+    expect(await reg.list('c1')).toEqual([]);
+    expect(await reg.isShared(77)).toBe(false);
+    expect(await reg.shareTarget()).toEqual({ kind: 'next' });
+
+    // 上一个账号点了「共享此页」还没交出去的，也不交给新账号的对话。
+    const fresh = new TabRegistry(new MemoryKV(), new FakeTabs());
+    expect(await fresh.share(88)).toBeNull();
+    await fresh.forgetAll();
+    expect(await fresh.touch('c9', 'x')).toBeNull();
+  });
+});
+
+describe('AccountWatch：平台账号变了先清上一个账号的状态（补充约定 4）', () => {
+  it('第一次连上只记下；同一账号不清；换了账号先清再记；记在本地存储，后台重启后照样比较', async () => {
+    const kv = new MemoryKV();
+    const cleared: Array<[string, string]> = [];
+    const clear = async (previous: string, current: string) => {
+      cleared.push([previous, current]);
+    };
+    const w = new AccountWatch(kv, clear);
+    expect(await w.connected('one@example.test')).toBe(false);
+    expect(await w.connected('one@example.test')).toBe(false);
+    expect(await w.connected('two@example.test')).toBe(true);
+    expect(cleared).toEqual([['one@example.test', 'two@example.test']]);
+
+    const restarted = new AccountWatch(kv, clear);
+    expect(await restarted.connected('two@example.test')).toBe(false);
+    expect(await restarted.connected('one@example.test')).toBe(true);
+    expect(cleared).toEqual([['one@example.test', 'two@example.test'], ['two@example.test', 'one@example.test']]);
+  });
+
+  it('清理失败时不记新账号：下一次连上再清', async () => {
+    const kv = new MemoryKV();
+    let fail = true;
+    const calls: string[] = [];
+    const w = new AccountWatch(kv, async (_previous, current) => {
+      calls.push(current);
+      if (fail) {
+        throw new Error('storage');
+      }
+    });
+    await w.connected('one@example.test');
+    await expect(w.connected('two@example.test')).rejects.toThrow('storage');
+    fail = false;
+    expect(await w.connected('two@example.test')).toBe(true);
+    expect(calls).toEqual(['two@example.test', 'two@example.test']);
   });
 });

@@ -12,6 +12,7 @@ function req(conversation: string, action: RequestFrame['action'] = 'read'): Req
     action,
     args: {},
     conversation,
+    conversation_title: '',
     deadline_ms: 1000,
     auth_wait_ms: 1000,
   };
@@ -127,6 +128,26 @@ describe('Scheduler', () => {
     await flush();
     expect(results).toHaveLength(3);
     expect(results.every((r) => r.code === 'user_stopped')).toBe(true);
+  });
+
+  it('abortAll（换了平台账号，补充约定 4）：正在跑的按给定原因中止，排队的都回这个原因', async () => {
+    const results: ResultFrame[] = [];
+    const s = new Scheduler((r, signal) => new Promise<ResultFrame>((resolve) => {
+      signal.addEventListener('abort', () => {
+        const reason = signal.reason as { code: 'timeout'; message: string };
+        resolve({ type: 'result', request_id: r.request_id, outcome: 'error', code: reason.code, message: reason.message });
+      });
+    }), (r) => results.push(r));
+
+    s.submit(req('A'));
+    s.submit(req('A'));
+    s.submit(req('B'));
+    await flush();
+    s.abortAll({ code: 'timeout', message: 'switched account' });
+    await flush();
+    expect(results).toHaveLength(3);
+    expect(results.every((r) => r.code === 'timeout' && r.message === 'switched account')).toBe(true);
+    expect(s.pending).toBe(0);
   });
 
   it('执行器抛异常也回一个结果（action_failed），不把异常文本交出去', async () => {

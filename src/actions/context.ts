@@ -8,6 +8,7 @@ import type { CapturedDownload } from '../browser/navguard';
 import type { SessionManager } from '../browser/sessions';
 import type { TabSession } from '../browser/tab-session';
 import type { TabRegistry } from '../browser/tabs';
+import { TransportError } from '../connection/transport';
 import type { Transport } from '../connection/transport';
 import { isUnattachableUrl, siteOf } from '../policy/url';
 import type { SiteStore } from '../policy/sites';
@@ -41,14 +42,34 @@ export interface Notices {
 export interface DownloadOutcome {
   file?: { file_id: string; kind: 'download'; name: string; size: number; content_type: string };
   denied?: boolean;
+  /**
+   * 用户允许了、文件没取回来（站点要求重新登录、链接只能用一次、浏览器断线、送回 Chat 失败）：动作本身已经生效，
+   * 结果仍按 ok 回，payload.download_failed，这句原因进 message（契约 3.2）。
+   */
+  failed?: string;
+  /** 只有 file_too_large（文件超过对话的文件上限）：整个结果按错误回（契约 3.2）。 */
   error?: ActionError;
 }
 
-/** 下载失败时的说明：动作本身（点击、提交）已经生效，只是文件没取回来；写明这一点，免得模型重点一次、重复提交。 */
+/** 下载没成时的说明：动作本身（点击、提交）已经生效，只是文件没取回来；写明这一点，免得模型重点一次、重复提交。 */
 const DOWNLOAD_DONE = 'The action itself went through (do not repeat it); ';
 const DOWNLOAD_NOT_CONNECTED = DOWNLOAD_DONE + 'only the file it downloaded could not be sent to the conversation because the browser is not connected.';
+const DOWNLOAD_NOT_SENT = DOWNLOAD_DONE + 'only the file it downloaded could not be sent to the conversation.';
 const DOWNLOAD_TOO_LARGE = DOWNLOAD_DONE + 'only the file it downloaded is larger than the size limit for files in the conversation.';
-const DOWNLOAD_NOT_RETRIEVED = DOWNLOAD_DONE + 'only the file it downloaded could not be retrieved.';
+const DOWNLOAD_NOT_RETRIEVED = DOWNLOAD_DONE + 'only the file it downloaded could not be retrieved';
+
+/** 在页面里重新取下载失败时的原因（page-agent.ts 的 fetchDownload 返回的 reason / status）。 */
+function notRetrieved(reason?: string, status?: number): string {
+  if (reason === 'status' && status !== undefined) {
+    return `${DOWNLOAD_NOT_RETRIEVED}: fetching it again got HTTP ${status} (the link may work only once, or the site wants the user to sign in again).`;
+  }
+
+  if (reason === 'network') {
+    return `${DOWNLOAD_NOT_RETRIEVED}: the site could not be reached when fetching it again.`;
+  }
+
+  return `${DOWNLOAD_NOT_RETRIEVED}.`;
+}
 
 /** 动作执行完、等页面稳定的上限。 */
 const SETTLE_MAX_MS = 10_000;
@@ -66,6 +87,8 @@ export class ActionContext implements GateContext {
   private readonly downloadJobs: Array<Promise<DownloadOutcome>> = [];
   /** 这个请求期间在响应阶段截下过的下载网址。 */
   private readonly capturedUrls = new Set<string>();
+  /** 成功结果里要附给模型的说明（如下载没取回来的原因），runRequest 接在 message 后面。 */
+  readonly notes: string[] = [];
 
   constructor(readonly request: RequestFrame, readonly services: Services, outer: AbortSignal) {
     this.deadlineLeft = request.deadline_ms;
@@ -286,7 +309,7 @@ export class ActionContext implements GateContext {
   private async deliverDownload(name: string, contentType: string, bytes: Uint8Array<ArrayBuffer>): Promise<DownloadOutcome> {
     const transport = this.services.transport();
     if (!transport) {
-      return { error: new ActionError('action_failed', DOWNLOAD_NOT_CONNECTED) };
+      return { failed: DOWNLOAD_NOT_CONNECTED };
     }
 
     const max = this.services.maxFileBytes();
@@ -295,8 +318,17 @@ export class ActionContext implements GateContext {
     }
 
     const type = contentType.split(';')[0]?.trim() || 'application/octet-stream';
-    const { file_id } = await transport.sendFile(this.requestId, { kind: 'download', name, contentType: type, data: new Blob([bytes], { type }) });
-    return { file: { file_id, kind: 'download', name, size: bytes.length, content_type: type } };
+    try {
+      const { file_id } = await transport.sendFile(this.requestId, { kind: 'download', name, contentType: type, data: new Blob([bytes], { type }) });
+      return { file: { file_id, kind: 'download', name, size: bytes.length, content_type: type } };
+    } catch (err) {
+      // 413：Chat 按它的文件上限拒收（契约 2.1）。其余（断线、请求已结束）只是文件没送到。
+      if (err instanceof TransportError && err.reason === 'file_too_large') {
+        return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
+      }
+
+      return { failed: DOWNLOAD_NOT_SENT };
+    }
   }
 
   /** 导航类下载（响应阶段截下的）：逐次确认 → 取响应体 → 送回 Chat。 */
@@ -312,12 +344,14 @@ export class ActionContext implements GateContext {
       return { denied: true };
     }
 
+    let body: Uint8Array;
     try {
-      const body = await d.body();
-      return await this.deliverDownload(name, d.contentType, new Uint8Array(body));
+      body = await d.body();
     } catch {
-      return { error: new ActionError('action_failed', DOWNLOAD_NOT_RETRIEVED) };
+      return { failed: notRetrieved() };
     }
+
+    return this.deliverDownload(name, d.contentType, new Uint8Array(body));
   }
 
   /** 不经导航的下载（`<a download>` 等）：逐次确认 → 页面里带登录态重新取 → 送回 Chat 存成交付文件。 */
@@ -327,30 +361,31 @@ export class ActionContext implements GateContext {
     }
 
     if (!this.services.transport()) {
-      return { error: new ActionError('action_failed', DOWNLOAD_NOT_CONNECTED) };
+      return { failed: DOWNLOAD_NOT_CONNECTED };
     }
 
     const max = this.services.maxFileBytes();
     const id = crypto.randomUUID();
-    const meta = await s.call<{ ok: boolean; reason?: string; size?: number; contentType?: string; disposition?: string }>(
-      s.mainFrameId, 'fetchDownload', [id, d.url, max]);
-
-    if (!meta.ok) {
-      if (meta.reason === 'too_large') {
-        return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
+    let meta: { ok: boolean; reason?: string; status?: number; size?: number; contentType?: string; disposition?: string };
+    let bytes: Uint8Array<ArrayBuffer>;
+    try {
+      meta = await s.call(s.mainFrameId, 'fetchDownload', [id, d.url, max]);
+      if (!meta.ok) {
+        return meta.reason === 'too_large'
+          ? { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) }
+          : { failed: notRetrieved(meta.reason, meta.status) };
       }
 
-      return { error: new ActionError('action_failed', DOWNLOAD_NOT_RETRIEVED) };
-    }
-
-    const size = meta.size ?? 0;
-    const bytes = new Uint8Array(size);
-    const chunk = 768 * 1024;
-    try {
+      const size = meta.size ?? 0;
+      bytes = new Uint8Array(size);
+      const chunk = 768 * 1024;
       for (let offset = 0; offset < size; offset += chunk) {
         const part = await s.call<string>(s.mainFrameId, 'downloadChunk', [id, offset, chunk]);
         bytes.set(decodeBase64(part), offset);
       }
+    } catch {
+      // 页面在取的过程中跳走或关掉了：内容随隔离世界没了。
+      return { failed: notRetrieved() };
     } finally {
       void s.call(s.mainFrameId, 'dropDownload', [id]).catch(() => undefined);
     }

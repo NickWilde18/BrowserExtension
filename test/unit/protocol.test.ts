@@ -45,6 +45,14 @@ describe('parseInbound', () => {
       .toMatchObject({ kind: 'cookies', decision: 'yes' });
     expect(parseInbound({ type: 'approval', request_id: RID, approval_id: 'bad id!', kind: 'site', decision: 'allow' })).toBeNull();
   });
+
+  it('request 的 conversation_title：照收；没有或不是字符串时为空；超过 200 字截断', () => {
+    const base = { type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 };
+    expect(parseInbound({ ...base, conversation_title: '选课 <b>帮忙</b>' })).toMatchObject({ conversation_title: '选课 <b>帮忙</b>' });
+    expect(parseInbound(base)).toMatchObject({ conversation_title: '' });
+    expect(parseInbound({ ...base, conversation_title: 42 })).toMatchObject({ conversation_title: '' });
+    expect((parseInbound({ ...base, conversation_title: 'x'.repeat(300) }) as { conversation_title: string }).conversation_title).toHaveLength(200);
+  });
 });
 
 describe('validateArgs', () => {

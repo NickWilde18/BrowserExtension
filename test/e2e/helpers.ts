@@ -111,11 +111,11 @@ export function rid(): string {
 
 /** 扮演 Chat 发一个请求，等它的结果帧。 */
 export async function call(h: Harness, action: string, args: Record<string, unknown> = {},
-  opts: { conversation?: string; deadlineMs?: number; authWaitMs?: number; requestId?: string } = {}): Promise<Result> {
+  opts: { conversation?: string; deadlineMs?: number; authWaitMs?: number; requestId?: string; title?: string } = {}): Promise<Result> {
   const requestId = opts.requestId ?? rid();
-  return h.sw.evaluate(async ({ requestId, action, args, conversation, deadlineMs, authWaitMs }) => {
+  return h.sw.evaluate(async ({ requestId, action, args, conversation, deadlineMs, authWaitMs, title }) => {
     const t = (globalThis as any).__bxTest;
-    t.server.deliver({ type: 'request', request_id: requestId, action, args, conversation, deadline_ms: deadlineMs, auth_wait_ms: authWaitMs });
+    t.server.deliver({ type: 'request', request_id: requestId, action, args, conversation, conversation_title: title, deadline_ms: deadlineMs, auth_wait_ms: authWaitMs });
     for (;;) {
       const found = t.server.sent.find((f: any) => f.type === 'result' && f.request_id === requestId);
       if (found) {
@@ -124,7 +124,7 @@ export async function call(h: Harness, action: string, args: Record<string, unkn
 
       await new Promise((r) => setTimeout(r, 25));
     }
-  }, { requestId, action, args, conversation: opts.conversation ?? CONV, deadlineMs: opts.deadlineMs ?? 30_000, authWaitMs: opts.authWaitMs ?? 60_000 });
+  }, { requestId, action, args, conversation: opts.conversation ?? CONV, deadlineMs: opts.deadlineMs ?? 30_000, authWaitMs: opts.authWaitMs ?? 60_000, title: opts.title });
 }
 
 /** 发请求但不等结果（与确认小窗交互的用例用）。 */

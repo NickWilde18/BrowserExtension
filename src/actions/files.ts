@@ -86,7 +86,14 @@ export async function upload(ctx: ActionContext, a: UploadArgs): Promise<ActionO
   const targetFrame = target.kind === 'ref' ? frameId : target.frameId;
   const staged: Array<{ id: string; name: string; mimeType: string }> = [];
   for (const f of a.files) {
-    const blob = await transport.fetchUpload(ctx.requestId, f.token);
+    let blob: Blob;
+    try {
+      blob = await transport.fetchUpload(ctx.requestId, f.token);
+    } catch {
+      // 令牌过期、请求已结束（403 / 404，契约 2.1）或断线：这时还没往页面里放任何文件。
+      throw new ActionError('action_failed', `"${f.name}" could not be fetched from the conversation; nothing was uploaded.`);
+    }
+
     if (max > 0 && blob.size > max) {
       throw new ActionError('file_too_large', `"${f.name}" is larger than the size limit for uploads.`);
     }

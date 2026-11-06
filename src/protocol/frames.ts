@@ -42,6 +42,8 @@ export interface RequestFrame {
   action: ActionName;
   args: Record<string, unknown>;
   conversation: string;
+  /** 对话标题（最多 200 字，可能为空），只给弹窗显示「将共享给：<标题>」用（契约 3.2）。 */
+  conversation_title: string;
   deadline_ms: number;
   auth_wait_ms: number;
 }
@@ -177,6 +179,7 @@ export function parseInbound(raw: unknown): InboundFrame | null {
         action: raw.action as ActionName,
         args: raw.args,
         conversation: raw.conversation,
+        conversation_title: typeof raw.conversation_title === 'string' ? [...raw.conversation_title].slice(0, 200).join('') : '',
         deadline_ms: raw.deadline_ms,
         auth_wait_ms: raw.auth_wait_ms,
       };

@@ -10,10 +10,10 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "build:test": "node scripts/build.mjs --test-hooks --out dist-test",
+    "build:test": "node scripts/build.mjs --test-hooks --fake-transport --platform-origin http://127.0.0.1:18960 --out dist-test && node scripts/build.mjs --test-hooks --platform-origin http://127.0.0.1:18963 --out dist-test-fetch",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "e2e": "node scripts/build.mjs --test-hooks --out dist-test && playwright test"
+    "e2e": "pnpm run build:test && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

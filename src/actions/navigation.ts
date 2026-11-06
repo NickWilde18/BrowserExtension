@@ -150,7 +150,10 @@ export async function close(ctx: ActionContext, a: CloseArgs): Promise<ActionOut
   return { session: null, payload: { detached, closed_tabs: closed } };
 }
 
-/** 动作期间拦下的下载 → payload 里的 files / download_denied；下载出错时抛出。 */
+/**
+ * 动作期间拦下的下载 → payload 里的 files / download_denied / download_failed（契约 3.2）。文件超过上限时抛
+ * file_too_large；其余没取回来的，动作本身已经生效：结果仍是 ok，原因记进 ctx.notes、接在 message 后面。
+ */
 export async function downloadsPayload(ctx: ActionContext): Promise<Record<string, unknown>> {
   const outcomes = await ctx.downloadOutcomes();
   const payload: Record<string, unknown> = {};
@@ -166,6 +169,12 @@ export async function downloadsPayload(ctx: ActionContext): Promise<Record<strin
   const err = outcomes.find((o) => o.error)?.error;
   if (err) {
     throw err;
+  }
+
+  const failed = [...new Set(outcomes.flatMap((o) => (o.failed ? [o.failed] : [])))];
+  if (failed.length) {
+    payload.download_failed = true;
+    ctx.notes.push(...failed);
   }
 
   return payload;

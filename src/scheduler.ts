@@ -84,11 +84,16 @@ export class Scheduler {
 
   /** 用户叫停（提示条上的「取消」、弹窗里的「停止」）：正在跑的中止，排队的全部回 user_stopped。 */
   stopAll(message: string): void {
+    this.abortAll({ code: 'user_stopped', message });
+  }
+
+  /** 全部中止（用户叫停、换了平台账号）：正在跑的按 reason 中止，排队的都按 reason 回结果。 */
+  abortAll(reason: AbortReason): void {
     for (const [conversation, lane] of this.lanes) {
-      lane.running?.ctrl.abort({ code: 'user_stopped', message } satisfies AbortReason);
+      lane.running?.ctrl.abort(reason);
 
       for (const r of lane.queue.splice(0)) {
-        this.answer({ type: 'result', request_id: r.request_id, outcome: 'error', code: 'user_stopped', message });
+        this.answer({ type: 'result', request_id: r.request_id, outcome: 'error', code: reason.code, message: reason.message });
       }
 
       this.dropIfIdle(conversation);

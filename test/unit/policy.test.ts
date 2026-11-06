@@ -93,4 +93,14 @@ describe('站点授权记录', () => {
     expect(await store.isAllowed('c1', 'https://a.test:8443')).toBe(false);
     expect(await store.isAllowed('c1', 'http://a.test')).toBe(false);
   });
+
+  it('换了平台账号（补充约定 4）：总是允许、仅本次对话两种授权都清掉', async () => {
+    const store = new SiteStore(new MemoryKV(), new MemoryKV());
+    await store.grant('c1', 'https://a.test', 'always');
+    await store.grant('c1', 'https://b.test', 'conversation');
+    await store.clear();
+    expect(await store.isAllowed('c1', 'https://a.test')).toBe(false);
+    expect(await store.isAllowed('c1', 'https://b.test')).toBe(false);
+    expect(await store.list()).toEqual({ always: [], conversation: {} });
+  });
 });

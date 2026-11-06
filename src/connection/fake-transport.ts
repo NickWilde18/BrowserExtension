@@ -1,5 +1,5 @@
-// 内存假传输：单测与端到端测试构建用，测试代码扮演 Chat 收发帧。生产构建不打包它（background 只在
-// TEST_HOOKS 时引用）。
+// 内存假传输：单测与端到端测试的假传输构建用，测试代码扮演 Chat 收发帧。生产构建不打包它（background 只在
+// __FAKE_TRANSPORT__ 时引用，scripts/build.mjs 构建后检查）。
 
 import type { OutboundFrame } from '../protocol/frames';
 import { TransportError } from './transport';

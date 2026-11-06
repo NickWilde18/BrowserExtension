@@ -109,6 +109,20 @@ test('动作结束之后 AI 标签里触发的下载：取消、不落进下载�
   expect((await call(h, 'read')).message).toBeUndefined();
 });
 
+test('用户允许了下载但取不回内容（一次性链接）：结果仍是 ok，payload.download_failed=true，message 写原因', async () => {
+  await call(h, 'open', { url: `${A}/download.html` });
+  const snap = await snapshot();
+  const id = await send(h, 'click', { element: 'Get the one-time file', ref: refOf(snap, 'Get the one-time file') });
+  await answer(h, 'Allow');
+  const r = await result(h, id);
+  expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(r.payload?.download_failed).toBe(true);
+  expect(r.payload?.files).toBeUndefined();
+  expect(r.message).toContain('do not repeat');
+  expect(r.message).toContain('could not be retrieved');
+  expect(await h.sw.evaluate(() => chrome.downloads.search({}))).toHaveLength(0);
+});
+
 test('用户自己在 AI 标签之外的下载照常', async () => {
   await call(h, 'open', { url: `${A}/newtab.html` });
   const mine = await h.ctx.newPage();

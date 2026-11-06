@@ -9,10 +9,12 @@ import { ApprovalRegistry } from './approval/registry';
 import { DownloadWatcher } from './browser/downloads';
 import { SessionManager } from './browser/sessions';
 import { TabRegistry } from './browser/tabs';
-import { IDLE_DETACH_MS } from './config';
+import { IDLE_DETACH_MS, PLATFORM_ORIGIN } from './config';
 import { ConnectionManager } from './connection/manager';
 import type { ConnectionStatus } from './connection/manager';
+import { AccountWatch } from './connection/account';
 import { FakeServer, FakeTransport } from './connection/fake-transport';
+import { FetchTransport } from './connection/fetch-transport';
 import type { Transport } from './connection/transport';
 import { Identity } from './identity';
 import type { Notices } from './actions/context';
@@ -85,39 +87,61 @@ const downloads = new DownloadWatcher({
 
 let stopped = false;
 let lastStatus: ConnectionStatus = { state: 'offline' };
-const outbox: Array<{ frame: ResultFrame; at: number }> = [];
+const outbox: Array<{ frame: ResultFrame; at: number; generation: number }> = [];
 
 void session.get<boolean>(STOPPED_KEY).then((v) => {
   stopped = stopped || v === true;
 });
 
 declare const __TEST_HOOKS__: boolean;
+declare const __FAKE_TRANSPORT__: boolean;
 
 /**
- * 测试构建：连接换成内存假传输，测试代码扮演 Chat。直接用构建期常量判断，生产构建里这个分支连同
- * FakeServer / FakeTransport 一起被删掉（scripts/build.mjs 构建后会检查）。
+ * 连接用真实传输（fetch 双向通道，契约第 2 节）。端到端测试的假传输构建（--fake-transport）换成内存假传输，
+ * 测试代码扮演 Chat。直接用构建期常量判断：其他构建里这个分支连同 FakeServer / FakeTransport 一起被删掉
+ * （scripts/build.mjs 构建后会检查）。
  */
-const fakeServer = __TEST_HOOKS__ ? new FakeServer() : null;
-const transportFactory: (() => Transport) | null = __TEST_HOOKS__ ? () => new FakeTransport(fakeServer as FakeServer) : null;
+const fakeServer = __FAKE_TRANSPORT__ ? new FakeServer() : null;
+const transportFactory = (): Transport => (__FAKE_TRANSPORT__
+  ? new FakeTransport(fakeServer as FakeServer)
+  : new FetchTransport(PLATFORM_ORIGIN));
+
+/** 换了平台账号时中止的请求的说明。 */
+const ACCOUNT_SWITCHED_MESSAGE = 'The browser switched to a different platform account, so this browser action was stopped.';
+
+/**
+ * 换过几次平台账号。每个请求记下收到时是第几次：换了账号之后，上一个账号的请求的结果（可能带着上一个用户的页面）
+ * 不发给新账号的连接。
+ */
+let accountGeneration = 0;
+const requestGeneration = new Map<string, number>();
+
+const accounts = new AccountWatch(local, () => forgetPreviousAccount());
 
 const manager = new ConnectionManager({
   transportFactory,
   hello: () => identity.hello(),
-  onFrame: (frame, epoch) => {
+  // 换了平台账号：先清上一个账号的对话状态，新连接才可用（补充约定 4）。
+  beforeReady: async (account) => {
+    await accounts.connected(account);
+  },
+  onFrame: (frame) => {
     switch (frame.type) {
       case 'request':
+        requestGeneration.set(frame.request_id, accountGeneration);
         scheduler.submit(frame);
         break;
+      // 取消与审批按 request_id（审批再加 approval_id）认，不管从哪一条连接来：轮换、重连之后，旧连接上开始的
+      // 请求的取消与审批从新连接发来（补充约定 1）。
       case 'cancel':
         scheduler.cancel(frame.request_id);
         break;
       case 'approval':
-        registry.receive(frame, epoch);
+        registry.receive(frame);
         break;
       default:
     }
   },
-  onDisconnected: (epoch) => registry.dropEpoch(epoch),
   onStatus: (status) => {
     lastStatus = status;
     if (status.state === 'connected') {
@@ -133,7 +157,7 @@ const gate = new Gate({
   registry,
   prompts,
   autoMode: async () => (await local.get<boolean>(AUTO_MODE_KEY)) ?? true,
-  epoch: () => manager.epoch,
+  connected: () => manager.connected,
   send: (frame) => manager.send(frame),
 });
 
@@ -171,8 +195,19 @@ const services: Services = {
 const scheduler = new Scheduler((request, signal) => runRequest(services, request, signal), emitResult);
 
 function emitResult(frame: ResultFrame): void {
+  const generation = requestGeneration.get(frame.request_id) ?? accountGeneration;
+  requestGeneration.delete(frame.request_id);
+  sendResult(frame, generation);
+}
+
+function sendResult(frame: ResultFrame, generation: number): void {
+  if (generation !== accountGeneration) {
+    // 上一个账号的请求：结果不发给新账号的连接（Chat 那边按超时收尾）。
+    return;
+  }
+
   manager.send(frame).catch(() => {
-    outbox.push({ frame, at: Date.now() });
+    outbox.push({ frame, at: Date.now(), generation });
   });
 }
 
@@ -180,8 +215,22 @@ function flushOutbox(): void {
   const now = Date.now();
   const pending = outbox.splice(0).filter((o) => now - o.at < OUTBOX_TTL_MS);
   for (const o of pending) {
-    emitResult(o.frame);
+    sendResult(o.frame, o.generation);
   }
+}
+
+/**
+ * 换了平台账号（补充约定 4）：清掉上一个账号的对话状态——排队和在跑的请求、待补发的结果、给模型的提醒、站点授权、
+ * 对话到标签组的对应与「将共享给」——并断开调试附着。AI 标签本身不关（只解散标签组）。
+ */
+async function forgetPreviousAccount(): Promise<void> {
+  accountGeneration++;
+  outbox.splice(0);
+  scheduler.abortAll({ code: 'timeout', message: ACCOUNT_SWITCHED_MESSAGE });
+  pendingNotices.clear();
+  await sites.clear();
+  await tabRegistry.forgetAll();
+  await sessions.detachAll();
 }
 
 /** 叫停：提示条上的「取消」、弹窗里的「停止」。断开全部附着，正在跑和排队的请求回 user_stopped。 */
@@ -288,6 +337,7 @@ async function popupState(): Promise<PopupState> {
     sites: { always: grants.always, conversation: conversationSites },
     canShare: site !== null && usedBy === null,
     shared,
+    shareTarget: await tabRegistry.shareTarget(),
     activeConversations: await tabRegistry.conversationCount(),
   };
 
@@ -393,10 +443,12 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
 
 manager.start();
 
-if (__TEST_HOOKS__ && fakeServer) {
+if (__TEST_HOOKS__) {
   (globalThis as Record<string, unknown>).__bxTest = {
+    /** 假传输构建里扮演 Chat 的内存服务端；真实传输的测试构建里为 null（Chat 由仿 Chat 服务扮演）。 */
     server: fakeServer,
     status: () => manager.status,
+    reconnect: () => manager.reconnectNow(),
     popupState,
     stop,
     resume,

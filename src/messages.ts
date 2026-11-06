@@ -3,6 +3,8 @@
 // 只在插件内部用：插件不声明 externally_connectable、不注册内容脚本，网页发不来这些消息；后台收到时
 // 再按发送方页面核对一遍（见 background.ts 的 onMessage）。
 
+import type { ShareTarget } from './browser/tabs';
+import type { ConnectionState } from './connection/manager';
 import type { ApprovalKind } from './protocol/frames';
 
 /** 确认小窗里的答复。 */
@@ -31,11 +33,8 @@ export interface PromptView {
   expiresAt: number;
 }
 
-export type ConnectionStateName =
-  | 'no_transport' | 'connecting' | 'connected' | 'waiting_login' | 'replaced' | 'protocol_unsupported' | 'error' | 'offline';
-
 export interface PopupState {
-  connection: ConnectionStateName;
+  connection: ConnectionState;
   account?: string;
   lastError?: string;
   displayName: string;
@@ -47,6 +46,8 @@ export interface PopupState {
   canShare: boolean;
   /** 当前标签页已经共享给某个对话。 */
   shared: boolean;
+  /** 「共享此页」会给谁：最近用过浏览器的对话（标题按纯文本显示），或下一个用浏览器的对话。 */
+  shareTarget: ShareTarget;
   activeConversations: number;
 }
 

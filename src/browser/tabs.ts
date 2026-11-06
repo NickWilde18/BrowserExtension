@@ -9,6 +9,10 @@ import type { KV } from '../storage';
 const KEY = 'tabs.conversations';
 const LAST_KEY = 'tabs.lastConversation';
 const PENDING_SHARE_KEY = 'tabs.pendingShare';
+const LAST_TITLE_KEY = 'tabs.lastConversationTitle';
+
+/** 「共享此页」会给谁（与 share() 同一口径）：最近用过浏览器的对话（带标题，可能为空），或下一个用浏览器的对话。 */
+export type ShareTarget = { kind: 'next' } | { kind: 'recent'; title: string };
 
 export interface ConversationTabs {
   groupId: number | null;
@@ -278,8 +282,18 @@ export class TabRegistry {
     await this.save();
   }
 
+  async shareTarget(): Promise<ShareTarget> {
+    const last = await this.kv.get<string>(LAST_KEY);
+    if (last && (await this.all())[last]) {
+      return { kind: 'recent', title: (await this.kv.get<string>(LAST_TITLE_KEY)) ?? '' };
+    }
+
+    return { kind: 'next' };
+  }
+
   /** 一个对话发来请求：记为最近使用，接上待共享的标签。返回这次接上的共享标签（调用方给它的站点记授权）。 */
-  async touch(conversation: string): Promise<number | null> {
+  async touch(conversation: string, title = ''): Promise<number | null> {
+    await this.kv.set(LAST_TITLE_KEY, title);
     const all = await this.all();
     const c = all[conversation] ?? this.blank();
     c.lastUsed = Date.now();
@@ -299,6 +313,29 @@ export class TabRegistry {
     await this.kv.set(LAST_KEY, conversation);
     await this.save();
     return adopted;
+  }
+
+  /**
+   * 换了平台账号（补充约定 4）：忘掉全部对话——对话到标签组的对应、「将共享给」的对话与标题、待共享的标签。AI 开的
+   * 标签不关，只解散标签组（不再是 AI 标签，留给用户）；共享进来的页面本来就是用户的。返回涉及的标签（调用方断开
+   * 它们的附着）。
+   */
+  async forgetAll(): Promise<number[]> {
+    const conversations = Object.values(await this.all());
+    // 先清登记再解散组：解散触发的 onUpdated(groupId) 不会被当成「拖出 AI 组」。
+    this.cache = {};
+    await this.save();
+    await this.kv.remove(LAST_KEY);
+    await this.kv.remove(LAST_TITLE_KEY);
+    await this.kv.remove(PENDING_SHARE_KEY);
+
+    for (const c of conversations) {
+      for (const tabId of c.tabs) {
+        await this.ops.ungroup(tabId);
+      }
+    }
+
+    return conversations.flatMap((c) => [...c.tabs, ...c.shared]);
   }
 
   /** 标签关掉了。 */

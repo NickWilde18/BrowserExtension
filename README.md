@@ -3,20 +3,33 @@
 让平台对话里的 Agent 在用户授权过的站点上操作用户本机的 Chrome / Edge（Manifest V3）。需求见 Tark#528，
 插件与平台之间的契约（帧、22 个动作、错误码、两边各自的边界）在 Chat 仓的 `docs/BROWSER_EXTENSION.md`。
 
-> **传输层待定**（Tark#528 计划第 9 节第 11 条）：本仓库只有传输接口 `src/connection/transport.ts` 和一个内存
-> 假传输（测试用）。生产构建现在连不上平台，弹窗显示「这个版本还不能连接平台」。
+## 连接平台
+
+fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src/connection/fetch-transport.ts`）：四个接口都在
+`<平台对外地址>/chat-service/browser/` 下，一律 POST、带浏览器里的平台会话 Cookie（`credentials: "include"`），
+**不带 `X-Service` 头**（网关按路径选服务名）。
+
+| 接口 | 用途 |
+|---|---|
+| `stream` | 请求体是 hello，响应是 NDJSON 下行流（一行一帧，块边界可能切在半行里） |
+| `frames` | 上行帧 `{"install_id", "frame"}`：result、progress、approval_request |
+| `uploads` | 凭请求里的令牌取上传文件的原始字节 |
+| `files` | 下载、存 PDF 的内容 multipart 送回，拿 `file_id` |
+
+插件发起的 WebSocket 握手带不上 `SameSite=Lax` 的会话 Cookie，fetch 带得上（计划 7.1 实测），所以不用 WebSocket。
 
 ## 构建
 
 ```bash
 pnpm install
-PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/
+PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/；也可以写 pnpm build --platform-origin https://…
 ```
 
-- `PLATFORM_ORIGIN` 是用户地址栏里的那个平台地址，manifest 的主机权限由它生成。插件里只有这一个地址。
+- 平台对外地址是用户地址栏里的那个，manifest 的主机权限由它生成，真实传输连它。插件里只有这一个地址。
 - 构建时从 `playwright-core`（版本钉死 1.62.1）取出页面注入脚本，许可（Apache-2.0）随产物放在
   `dist/third_party/playwright/`。换版本时 `scripts/extract-injected.mjs` 的结构断言会先失败。
-- 生产构建检查产物里不含测试用的假传输与测试入口。
+- 生产构建检查产物：不含测试用的假传输与测试入口，含真实传输，不出现 `X-Service`。`--fake-transport` 只能和
+  `--test-hooks` 一起用。
 
 ## 开发者模式安装
 
@@ -36,8 +49,14 @@ pnpm test                       # vitest 单测
 xvfb-run -a pnpm e2e            # Playwright 端到端（不带 xvfb-run 时，要有界面的那个用例会跳过）
 ```
 
-端到端测试加载测试构建（`dist-test/`，`--test-hooks`）：连接换成内存假传输，测试代码扮演 Chat 收发帧，在本地夹具
-站点（`test/e2e/fixtures/server.mjs`，`127.0.0.1` 与 `localhost` 两个来源）上真跑动作、点确认小窗。
+`pnpm e2e` 先构建两个测试版（`pnpm build:test`），再在本地夹具站点（`test/e2e/fixtures/server.mjs`，`127.0.0.1` 与
+`localhost` 两个来源）上真跑动作、点确认小窗：
+
+- `dist-test/`（`--test-hooks --fake-transport`）：连接换成内存假传输，测试代码扮演 Chat 收发帧；
+- `dist-test-fetch/`（`--test-hooks`）：真实传输，平台地址是仿 Chat 服务（`test/e2e/fixtures/chat-server.mjs`，
+  `127.0.0.1:18963`）。它下发与网关同属性的会话 Cookie（`HttpOnly; SameSite=Lax`），校验 Cookie 与 `Origin`，
+  被拒时的响应体与 Chat 一致；`transport.spec.ts` 测连上、动作结果、上传、下载、轮换、断线、401、403、413、
+  轮换后到达的审查结论、换账号，以及每个请求只走这四个路径、不带 `X-Service`。
 
 `test/probe/` 是实测用的常驻探测进程（有界面的浏览器 + 本机控制端口 + XTest 点击），用来测调试提示条这类要
 「看一眼屏幕再点」的项目。
@@ -64,7 +83,7 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
 | 位置 | 内容 |
 |---|---|
 | `src/protocol/` | 帧与 22 个动作的参数校验、错误码 |
-| `src/connection/` | 传输接口、连接状态机（ready、心跳、退避重连、保活）、内存假传输 |
+| `src/connection/` | 传输接口、真实传输（fetch 双向通道）、连接状态机（ready、心跳、退避重连、轮换、保活）、账号变化、内存假传输 |
 | `src/scheduler.ts` | 同一对话串行、不同对话并行、排队上限、去重、恰好一个结果 |
 | `src/approval/` | 审批帧接收规则、确认小窗、先问审查再问用户的流程 |
 | `src/policy/` | 网址可开范围、站点授权记录、凭据头去除 |
@@ -103,10 +122,24 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
 - AI 动作期间会新开标签的链接、表单、`window.open`，在当前 AI 标签里打开（原来的页面在历史里，可以后退）。
 - AI 自己开的标签里，动作之外（页面延迟触发、用户自己点）的下载会被取消，不落进下载目录，并在这个对话的下一个结果的
   `message` 里告诉模型文件名与站点。用户共享进来的页面、AI 标签之外的标签里的下载照常。
+- 用户允许了下载、文件却没取回来（链接只能用一次、站点要求重新登录、浏览器断线、送回平台失败）：动作本身已经生效，
+  结果仍是 `ok`，`payload.download_failed` 为 `true`，`message` 写原因并写明不要重做。文件超过平台的文件上限时回
+  `file_too_large`（`files` 回 413 也一样）。
+- 弹窗「共享此页」下面写明会共享给谁：「将共享给：<对话标题>」（标题来自请求的 `conversation_title`，按纯文本
+  显示）；最近用过浏览器的对话标题为空时「将共享给最近使用浏览器的对话」，还没有对话用过时「将共享给下一个使用
+  浏览器的对话」。
+- 连接：`rotate`（连接到了 5 分钟寿命）与 `server_shutdown` 立刻重连；断线、404、429 按 1 秒起翻倍、封顶 60 秒、
+  带抖动的退避重连；401 时弹窗提示在平台网页上登录，之后按退避重试；`stream` 上 403（平台没登记这个插件）停住、
+  弹窗提示，点「重新连接」再试；`protocol_unsupported` 提示升级、不重连。轮换、重连之后，旧连接上开始的请求，它的
+  取消与审查结论从新连接来，照认。
+- 换了平台账号（`ready.account` 与上次连上时不同，上次的账号记在本地存储）：新连接可用之前，先中止排队与在跑的
+  请求、清掉站点授权（含「总是允许」）、对话到标签组的对应与「将共享给」、待共享的标签，断开调试附着；AI 标签不关，
+  只解散标签组。上一个账号的请求的结果不再发出（平台那边按超时收尾）。清理失败时这条连接不用，按退避重连再清。
 
 ## 已知限制
 
-- 传输层未实现（见上）。
+- 结果帧 8 MiB 的上限按 JSON 的字符数估算，页面以中文等非 ASCII 字符为主时实际字节会更多；超过 `frames` 的
+  9 MiB 时平台回 413，插件改发一条 `action_failed`（「The result was too large to send.」）。
 - 新开标签的守卫跑在页面主世界里，页面自己的脚本能绕过它（比如从新建的 iframe 里拿原生的 `window.open`）。页面脚本
   本来就能直接请求外站，不在这条防线的范围内（计划第 10 节）；动作期间万一还是冒出了新标签，后台立即关掉它并告诉
   模型，但挡不住它已经发出的请求。

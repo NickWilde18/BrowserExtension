@@ -53,7 +53,10 @@ async function render(): Promise<void> {
     return;
   }
 
-  const key = `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
+  // 插件没在平台登记（stream 上的 403）时停住不重试，提示和「稍后会重试」的 error 分开。
+  const key = st.connection === 'error' && st.lastError === 'origin_not_allowed'
+    ? 'stateOrigin_not_allowed'
+    : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
   $('state').textContent = t(key);
   $('accountRow').hidden = !st.account;
   $('account').textContent = st.account ?? '';
@@ -71,6 +74,12 @@ async function render(): Promise<void> {
   ($('autoMode') as HTMLInputElement).checked = st.autoMode;
 
   $('share').hidden = !st.canShare || st.shared;
+  // 「将共享给」跟着按钮显示。对话标题来自平台，按纯文本放（textContent），不当 HTML。
+  const target = $('shareTarget');
+  target.hidden = $('share').hidden;
+  target.textContent = st.shareTarget.kind === 'next'
+    ? t('shareTargetNext')
+    : st.shareTarget.title === '' ? t('shareTargetRecent') : t('shareTargetTitled', [st.shareTarget.title]);
   $('sharedRow').hidden = !st.shared;
   $('shareNote').hidden = !st.canShare && !st.shared;
 

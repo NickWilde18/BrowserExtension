@@ -10,15 +10,13 @@ const CONV = '66666666-7777-4888-9999-aaaaaaaaaaaa';
 
 function setup(random = 0.999) {
   const server = new FakeServer();
-  const frames: Array<{ frame: ConnectionFrame; epoch: number }> = [];
-  const disconnected: number[] = [];
+  const frames: ConnectionFrame[] = [];
   const statuses: ConnectionStatus[] = [];
   let keepAlives = 0;
   const m = new ConnectionManager({
     transportFactory: () => new FakeTransport(server),
     hello: async () => ({ type: 'hello', protocol: 1, install_id: CONV, display_name: 'Chrome · Linux', extension_version: '0.1.0' }),
-    onFrame: (frame, epoch) => frames.push({ frame, epoch }),
-    onDisconnected: (e) => disconnected.push(e),
+    onFrame: (frame) => frames.push(frame),
     onStatus: (s) => statuses.push(s),
     keepAlive: () => {
       keepAlives++;
@@ -32,7 +30,7 @@ function setup(random = 0.999) {
     },
     random: () => random,
   });
-  return { m, server, frames, disconnected, statuses, keepAlives: () => keepAlives };
+  return { m, server, frames, statuses, keepAlives: () => keepAlives };
 }
 
 const tick = async (ms = 0) => {
@@ -54,6 +52,8 @@ describe('ConnectionManager', () => {
     await tick();
     expect(server.sent[0]).toMatchObject({ type: 'hello', protocol: 1 });
     expect(m.status.state).toBe('connecting');
+    // 还没 ready：上行帧不发，报 not_connected（结果进 background 的待发队列）。
+    await expect(m.send({ type: 'pong' })).rejects.toMatchObject({ reason: 'not_connected' });
 
     server.deliver({ type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 });
     server.deliver(READY);
@@ -62,7 +62,7 @@ describe('ConnectionManager', () => {
     expect(frames).toHaveLength(0);
 
     server.deliver({ type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 });
-    expect(frames).toEqual([expect.objectContaining({ epoch: 1 })]);
+    expect(frames).toEqual([expect.objectContaining({ type: 'request', request_id: RID })]);
   });
 
   it('ready 超时、断线后按 1s 起翻倍退避重连，封顶 60s', async () => {
@@ -89,14 +89,14 @@ describe('ConnectionManager', () => {
     expect(Math.max(...delays)).toBeLessThanOrEqual(60_000);
   });
 
-  it('closed.replaced 不重连；server_shutdown 立刻重连；unauthenticated 等登录', async () => {
-    const { m, server, disconnected, statuses } = setup();
+  it('closed.replaced 不重连；server_shutdown 立刻重连（不退避，补充约定 5）；unauthenticated 等登录', async () => {
+    const { m, server, statuses } = setup();
     m.start();
     await tick();
     server.deliver(READY);
     server.deliver({ type: 'closed', reason: 'replaced' });
     expect(m.status.state).toBe('replaced');
-    expect(disconnected).toEqual([1]);
+    expect(m.connected).toBe(false);
     const opens = server.opens;
     await tick(120_000);
     expect(server.opens).toBe(opens);
@@ -104,10 +104,11 @@ describe('ConnectionManager', () => {
     m.reconnectNow();
     await tick();
     server.deliver(READY);
-    expect(m.epoch).toBe(2);
+    expect(m.connected).toBe(true);
+    const beforeShutdown = server.opens;
     server.deliver({ type: 'closed', reason: 'server_shutdown' });
-    expect(m.status.retryAt! - Date.now()).toBeLessThan(500);
-    await tick(500);
+    await tick(0);
+    expect(server.opens).toBe(beforeShutdown + 1);
     server.deliver(READY);
     expect(m.status.state).toBe('connected');
 
@@ -138,7 +139,7 @@ describe('ConnectionManager', () => {
     await tick(11_000);
     expect(b.m.status.state).toBe('offline');
     expect(b.m.status.lastError).toBe('heartbeat_timeout');
-    expect(b.disconnected).toEqual([1]);
+    expect(b.m.connected).toBe(false);
   });
 
   it('工作期间每 20 秒保活一次（连着、等重连都算），停在 replaced 后不再保活', async () => {
@@ -153,17 +154,118 @@ describe('ConnectionManager', () => {
     expect(keepAlives()).toBe(3);
   });
 
-  it('没有传输层的构建：状态 no_transport，什么都不做', async () => {
-    const m = new ConnectionManager({
-      transportFactory: null,
-      hello: async () => { throw new Error('unused'); },
-      onFrame: () => undefined,
-      onDisconnected: () => undefined,
-      onStatus: () => undefined,
-      keepAlive: () => undefined,
-    });
+  it('closed.rotate（连接到了 5 分钟寿命）：立刻重连，不退避、不算失败次数', async () => {
+    const { m, server } = setup(0.999);
     m.start();
-    expect(m.status.state).toBe('no_transport');
-    await expect(m.send({ type: 'pong' })).rejects.toThrow();
+    await tick();
+    server.deliver(READY);
+    // 先攒几次失败，确认 rotate 不沿用退避。
+    for (let i = 0; i < 3; i++) {
+      server.drop();
+      await tick(m.status.retryAt! - Date.now());
+    }
+
+    server.deliver(READY);
+    const opens = server.opens;
+    server.deliver({ type: 'closed', reason: 'rotate' });
+    await tick(0);
+    expect(server.opens).toBe(opens + 1);
+    expect(m.status.state).toBe('connecting');
+  });
+
+  it('stream 上 403（来源没登记）：停止重连并提示，弹窗「重新连接」才再试', async () => {
+    const { m, server, keepAlives } = setup();
+    server.failNextOpen = 'origin_not_allowed';
+    m.start();
+    await tick();
+    expect(m.status).toMatchObject({ state: 'error', lastError: 'origin_not_allowed' });
+    const opens = server.opens;
+    await tick(300_000);
+    expect(server.opens).toBe(opens);
+    expect(keepAlives()).toBe(0);
+    m.reconnectNow();
+    await tick();
+    expect(server.opens).toBe(opens + 1);
+  });
+
+  describe('ready 之后先做完 beforeReady（账号变了先清上一个账号的状态，补充约定 4）才算连上', () => {
+    function withHook(hook: (account: string) => Promise<void>) {
+      const server = new FakeServer();
+      const frames: ConnectionFrame[] = [];
+      const m = new ConnectionManager({
+        transportFactory: () => new FakeTransport(server),
+        hello: async () => ({ type: 'hello', protocol: 1, install_id: CONV, display_name: 'Chrome · Linux', extension_version: '0.1.0' }),
+        beforeReady: hook,
+        onFrame: (frame) => frames.push(frame),
+        onStatus: () => undefined,
+        keepAlive: () => undefined,
+        random: () => 0.5,
+      });
+      return { server, frames, m };
+    }
+
+    it('做完之前不算连上，期间到的请求类帧攒着，做完按到达顺序交出', async () => {
+      const accounts: string[] = [];
+      let release!: () => void;
+      const { server, frames, m } = withHook((account) => {
+        accounts.push(account);
+        return new Promise<void>((r) => {
+          release = r;
+        });
+      });
+      m.start();
+      await tick();
+      server.deliver(READY);
+      server.deliver({ type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 });
+      server.deliver({ type: 'cancel', request_id: RID });
+      expect(accounts).toEqual([READY.account]);
+      expect(m.status.state).toBe('connecting');
+      expect(m.connected).toBe(false);
+      expect(frames).toEqual([]);
+
+      release();
+      await tick();
+      expect(m.status).toMatchObject({ state: 'connected', account: READY.account });
+      expect(frames.map((f) => f.type)).toEqual(['request', 'cancel']);
+    });
+
+    it('做的过程中连接断了：攒着的帧丢掉，不算连上，按断线重连', async () => {
+      let release!: () => void;
+      const { server, frames, m } = withHook(() => new Promise<void>((r) => {
+        release = r;
+      }));
+      m.start();
+      await tick();
+      server.deliver(READY);
+      server.deliver({ type: 'cancel', request_id: RID });
+      server.drop();
+      release();
+      await tick();
+      expect(m.status.state).toBe('offline');
+      expect(frames).toEqual([]);
+    });
+
+    it('清理失败：这条连接不用（免得新账号沿用上一个账号的授权），按退避重连，重连时再清', async () => {
+      let calls = 0;
+      const { server, frames, m } = withHook(async () => {
+        calls++;
+        if (calls === 1) {
+          throw new Error('storage');
+        }
+      });
+      m.start();
+      await tick();
+      server.deliver(READY);
+      server.deliver({ type: 'cancel', request_id: RID });
+      await tick();
+      expect(m.status).toMatchObject({ state: 'offline', lastError: 'account_switch_failed' });
+      expect(frames).toEqual([]);
+
+      await tick(m.status.retryAt! - Date.now());
+      server.deliver(READY);
+      await tick();
+      expect(calls).toBe(2);
+      expect(m.status.state).toBe('connected');
+    });
   });
 });

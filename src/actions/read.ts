@@ -2,6 +2,7 @@
 
 import type { AgentFindMatch } from '../browser/page-agent';
 import { BODY_LIMIT } from '../browser/recorder';
+import { TransportError } from '../connection/transport';
 import type { ConsoleArgs, FindArgs, NetworkArgs, ReadArgs, ScreenshotArgs, WaitArgs } from '../protocol/args';
 import { ActionError } from '../protocol/errors';
 import type { ActionContext } from './context';
@@ -257,14 +258,26 @@ export async function pdf(ctx: ActionContext): Promise<ActionOutput> {
     throw new ActionError('action_failed', 'The PDF could not be sent to the conversation because the browser is not connected.');
   }
 
+  const tooLarge = 'The PDF of this page is larger than the size limit for files in the conversation.';
   const res = await s.cdp.send<{ data: string }>('Page.printToPDF', { printBackground: true, preferCSSPageSize: true });
   const bytes = decodeBase64(res.data);
   if (bytes.length > ctx.services.maxFileBytes()) {
-    throw new ActionError('file_too_large', 'The PDF of this page is larger than the size limit for files in the conversation.');
+    throw new ActionError('file_too_large', tooLarge);
   }
 
   const info = await s.pageInfo();
   const name = `${sanitizeFilename(info.title || 'page').slice(0, 120)}.pdf`;
-  const { file_id } = await transport.sendFile(ctx.requestId, { kind: 'pdf', name, contentType: 'application/pdf', data: new Blob([bytes], { type: 'application/pdf' }) });
-  return { session: s, payload: { files: [{ file_id, kind: 'pdf', name, size: bytes.length, content_type: 'application/pdf' }] } };
+  let fileId: string;
+  try {
+    ({ file_id: fileId } = await transport.sendFile(ctx.requestId, { kind: 'pdf', name, contentType: 'application/pdf', data: new Blob([bytes], { type: 'application/pdf' }) }));
+  } catch (err) {
+    // 413：Chat 按它的文件上限拒收（契约 2.1）。
+    if (err instanceof TransportError && err.reason === 'file_too_large') {
+      throw new ActionError('file_too_large', tooLarge);
+    }
+
+    throw new ActionError('action_failed', 'The PDF could not be sent to the conversation.');
+  }
+
+  return { session: s, payload: { files: [{ file_id: fileId, kind: 'pdf', name, size: bytes.length, content_type: 'application/pdf' }] } };
 }
