@@ -6,7 +6,7 @@ import { parseChord } from '../../src/browser/keys';
 import { AccountWatch } from '../../src/connection/account';
 import { TabRegistry } from '../../src/browser/tabs';
 import type { TabOps } from '../../src/browser/tabs';
-import { defaultDisplayName, normalizeDisplayName } from '../../src/identity';
+import { Identity, defaultDisplayName, normalizeDisplayName } from '../../src/identity';
 import { ActionError } from '../../src/protocol/errors';
 import { MemoryKV } from '../../src/storage';
 
@@ -38,6 +38,27 @@ describe('显示名', () => {
     expect(defaultDisplayName('', ['Google Chrome', 'Chromium'], 'mac')).toBe('Chrome · macOS');
     expect(defaultDisplayName('', ['Chromium'], 'linux')).toBe('Chromium · Linux');
     expect(defaultDisplayName('', [], 'cros')).toBe('Browser · ChromeOS');
+  });
+});
+
+describe('安装 id', () => {
+  const CANONICAL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+  it('首次生成规范形态的 UUID（小写带连字符），之后不变', async () => {
+    const id = new Identity(new MemoryKV());
+    const first = await id.installId();
+    expect(first).toMatch(CANONICAL);
+    expect(await id.installId()).toBe(first);
+  });
+
+  it('存储里的不是规范形态（Chat 会对 frames / uploads / files 回 400）：换一个新的', async () => {
+    for (const bad of ['66666666-7777-4888-9999-AAAAAAAAAAAA', '{66666666-7777-4888-9999-aaaaaaaaaaaa}', 'not-a-uuid', 42]) {
+      const kv = new MemoryKV();
+      await kv.set('identity.installId', bad);
+      const id = await new Identity(kv).installId();
+      expect(id, String(bad)).toMatch(CANONICAL);
+      expect(await kv.get('identity.installId')).toBe(id);
+    }
   });
 });
 

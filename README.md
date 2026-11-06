@@ -12,9 +12,11 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 | 接口 | 用途 |
 |---|---|
 | `stream` | 请求体是 hello，响应是 NDJSON 下行流（一行一帧，块边界可能切在半行里） |
-| `frames` | 上行帧 `{"install_id", "frame"}`：result、progress、approval_request |
-| `uploads` | 凭请求里的令牌取上传文件的原始字节 |
+| `frames` | 上行帧 `{"install_id", "frame"}`：result、progress、approval_request；成功是 200 `{}`，按 2xx 判 |
+| `uploads` | 凭请求里的令牌取上传文件的原始字节；读到的字节数与 `Content-Length` 不符就当没取到，不放进页面 |
 | `files` | 下载、存 PDF 的内容 multipart 送回，拿 `file_id` |
+
+`install_id` 只用规范形态的 UUID（小写带连字符，Chat 对不是的回 400）；本地存储里的值不合规时换一个新的。
 
 插件发起的 WebSocket 握手带不上 `SameSite=Lax` 的会话 Cookie，fetch 带得上（计划 7.1 实测），所以不用 WebSocket。
 

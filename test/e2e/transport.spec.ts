@@ -115,6 +115,21 @@ test('上传：经 uploads 按令牌取文件内容', async () => {
   await expect.poll(() => page?.locator('#out').textContent()).toContain('visible:note.txt:12:text/plain');
 });
 
+test('上传：uploads 读到一半断了（字节数不到 Content-Length）：回 action_failed，不把截断的文件放进页面', async () => {
+  await grantA();
+  const data = Buffer.from('0123456789'.repeat(400));
+  await ctl('upload', { token: 'tk-cut', b64: data.toString('base64'), type: 'text/plain', truncate: '1' });
+  await request('open', { url: `${A}/upload.html` });
+  const snap = String((await request('read')).payload.snapshot);
+  const id = await request('upload', { element: 'Attachment', ref: refOf(snap, 'Attachment'), files: [{ token: 'tk-cut', name: 'cut.txt', size: data.length, content_type: 'text/plain' }] }, false);
+  await answer(harness(), 'Allow');
+  const r = await result(id);
+  expect(r, JSON.stringify(r)).toMatchObject({ outcome: 'error', code: 'action_failed' });
+  expect(r.message).toContain('nothing was uploaded');
+  const page = ctx.pages().find((p) => p.url().includes('/upload.html'));
+  expect(await page?.locator('#out').textContent()).not.toContain('cut.txt');
+});
+
 test('下载：内容经 files 送回 Chat，结果里是 Chat 给的 file_id', async () => {
   await request('open', { url: `${A}/download.html` });
   const snap = String((await request('read')).payload.snapshot);

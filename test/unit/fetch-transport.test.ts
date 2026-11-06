@@ -187,6 +187,29 @@ describe('FetchTransport', () => {
     expectCleanRequests(calls);
   });
 
+  it('frames 成功是 200、响应体 {}（Chat 的统一响应中间件补的 JSON）：按 2xx 判成功', async () => {
+    const s = ndjson([]);
+    mockFetch((url) => (url.endsWith('/stream') ? s.response : Response.json({})));
+    const t = new FetchTransport(ORIGIN);
+    await t.open({ onFrame: () => undefined, onClose: () => undefined });
+    await t.send(HELLO);
+    await expect(t.send({ type: 'progress', request_id: '11111111-2222-4333-8444-555555555555', stage: 'working' })).resolves.toBeUndefined();
+  });
+
+  it('uploads：读到的字节数与 Content-Length 不符就当取文件失败，不交出截断的内容；一致时照常', async () => {
+    const s = ndjson([]);
+    const replies = [
+      () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'text/plain', 'Content-Length': '10' } }),
+      () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'text/plain', 'Content-Length': '3' } }),
+    ];
+    mockFetch((url) => (url.endsWith('/stream') ? s.response : replies.shift()!()));
+    const t = new FetchTransport(ORIGIN);
+    await t.open({ onFrame: () => undefined, onClose: () => undefined });
+    await t.send(HELLO);
+    await expect(t.fetchUpload('r1', 'tok-1')).rejects.toEqual(new TransportError('upload_truncated'));
+    expect((await t.fetchUpload('r1', 'tok-2')).size).toBe(3);
+  });
+
   it('送回文件：files 用 multipart，拿回 file_id；413 报 file_too_large', async () => {
     const s = ndjson([]);
     const forms: FormData[] = [];

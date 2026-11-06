@@ -5,6 +5,7 @@
 // 显示名：默认按浏览器与系统生成（如「Chrome · Linux」），用户可在弹窗里改；用于在对话里选用哪台。
 
 import { PROTOCOL_VERSION } from './config';
+import { isUUID } from './protocol/frames';
 import type { HelloFrame } from './protocol/frames';
 import type { KV } from './storage';
 
@@ -52,8 +53,10 @@ export class Identity {
   constructor(private readonly local: KV) {}
 
   async installId(): Promise<string> {
-    const existing = await this.local.get<string>(INSTALL_ID_KEY);
-    if (existing) {
+    // 只用规范形态（小写带连字符）的 UUID：不是的 Chat 对 frames / uploads / files 回 400；存储里的值坏了
+    // 就换一个新的（等于重装一次，Chat 那边按新的一台浏览器认）。
+    const existing = await this.local.get<unknown>(INSTALL_ID_KEY);
+    if (isUUID(existing)) {
       return existing;
     }
 

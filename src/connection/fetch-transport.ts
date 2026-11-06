@@ -84,7 +84,22 @@ export class FetchTransport implements Transport {
   async fetchUpload(_requestId: string, token: string): Promise<Blob> {
     const res = await this.post('uploads', JSON.stringify({ install_id: this.installId, token }), 'application/json');
     if (res.ok) {
-      const bytes = await res.arrayBuffer();
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await res.arrayBuffer();
+      } catch {
+        // 读到一半连接断了（浏览器按 Content-Length 判出不完整时也是这样）。
+        throw new TransportError('upload_truncated');
+      }
+
+      // Chat 的响应带 Content-Length（对象存储里的实际大小）：字节数对不上就当没取到，不把截断的文件交给网站。
+      // 内容经过压缩编码时 Content-Length 是压缩后的大小，没法比，只靠上面浏览器自己的判断。
+      const declared = res.headers.get('content-length');
+      const encoding = (res.headers.get('content-encoding') ?? '').trim().toLowerCase();
+      if (declared !== null && (encoding === '' || encoding === 'identity') && Number(declared) !== bytes.byteLength) {
+        throw new TransportError('upload_truncated');
+      }
+
       return new Blob([bytes], { type: res.headers.get('content-type') ?? '' });
     }
 

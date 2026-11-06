@@ -15,6 +15,8 @@ const port = Number(process.argv[2] || 18963);
 const EXT_ORIGIN = 'chrome-extension://agagklnjfndomhambbpfhenaoclcbpmo';
 const COOKIE = 'gfsessionid=sess-ok';
 const BASE = '/chat-service/browser/';
+/** install_id 的规范形态（小写带连字符）；不是的 frames / uploads / files 回 400（与 Chat 一致）。 */
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const state = {
   requests: [],
@@ -136,7 +138,8 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       case 'upload':
-        uploads.set(url.searchParams.get('token'), { data: Buffer.from(url.searchParams.get('b64'), 'base64'), type: url.searchParams.get('type') });
+        // truncate=1：只发一部分字节就断开（Content-Length 是完整大小），模拟对象存储读到一半断了。
+        uploads.set(url.searchParams.get('token'), { data: Buffer.from(url.searchParams.get('b64'), 'base64'), type: url.searchParams.get('type'), truncate: url.searchParams.get('truncate') === '1' });
         res.end('{"ok":true}');
         return;
       default:
@@ -226,6 +229,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     const { install_id: installId, frame } = JSON.parse(raw.toString());
+    if (!CANONICAL_UUID.test(installId ?? '')) {
+      reject(res, 400);
+      return;
+    }
+
     state.received.push({ installId, frame });
     if (frame?.type === 'approval_request') {
       if (state.holdApprovals) {
@@ -235,21 +243,32 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    res.statusCode = 204;
-    res.end();
+    // 与 Chat 一致：统一响应中间件给空响应补 JSON，成功是 200 {}。
+    res.setHeader('Content-Type', 'application/json');
+    res.end('{}');
     return;
   }
 
   if (name === 'uploads') {
-    const { token } = JSON.parse((await body(req)).toString());
-    const up = uploads.get(token);
-    if (!up) {
-      res.statusCode = 404;
-      res.end();
+    const { install_id: installId, token } = JSON.parse((await body(req)).toString());
+    if (!CANONICAL_UUID.test(installId ?? '')) {
+      reject(res, 400);
       return;
     }
 
-    res.setHeader('Content-Type', up.type);
+    const up = uploads.get(token);
+    if (!up) {
+      reject(res, 404);
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Type': up.type, 'Content-Length': String(up.data.length) });
+    if (up.truncate) {
+      res.write(up.data.subarray(0, Math.floor(up.data.length / 2)));
+      res.socket?.destroy();
+      return;
+    }
+
     res.end(up.data);
     return;
   }
@@ -263,6 +282,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   const form = await new Request(`http://x${url.pathname}`, { method: 'POST', headers: req.headers, body: Readable.toWeb(req), duplex: 'half' }).formData();
+  if (!CANONICAL_UUID.test(String(form.get('install_id') ?? ''))) {
+    reject(res, 400);
+    return;
+  }
+
   const file = form.get('file');
   const bytes = Buffer.from(await file.arrayBuffer());
   const fileId = `00000000-0000-4000-b000-${String(state.files.length + 1).padStart(12, '0')}`;
