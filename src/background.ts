@@ -15,6 +15,7 @@ import type { ConnectionStatus } from './connection/manager';
 import { FakeServer, FakeTransport } from './connection/fake-transport';
 import type { Transport } from './connection/transport';
 import { Identity } from './identity';
+import type { Notices } from './actions/context';
 import type { PageMessage, PopupState } from './messages';
 import { SiteStore } from './policy/sites';
 import { siteOf } from './policy/url';
@@ -37,7 +38,50 @@ const sites = new SiteStore(local, session);
 const tabRegistry = new TabRegistry(session, undefined, (c) => chrome.i18n.getMessage('tabGroupTitle', [c.slice(0, 4)]) || `AI · ${c.slice(0, 4)}`);
 const prompts = new PromptManager();
 const registry = new ApprovalRegistry();
-const downloads = new DownloadWatcher();
+
+/** 动作之外发生、要在对话的下一个结果里告诉模型的事。浏览器关掉就没了（不进存储：只是给模型的提醒）。 */
+const pendingNotices = new Map<string, string[]>();
+const notices: Notices = {
+  add(conversation, text) {
+    const list = pendingNotices.get(conversation) ?? [];
+    if (list.length < 10) {
+      list.push(text);
+    }
+
+    pendingNotices.set(conversation, list);
+  },
+  take(conversation) {
+    const list = pendingNotices.get(conversation) ?? [];
+    pendingNotices.delete(conversation);
+    return list;
+  },
+};
+
+/** 正在执行动作的 AI 标签。 */
+const acting = new Set<number>();
+
+const downloads = new DownloadWatcher({
+  ownedBy: (tabId) => tabRegistry.ownedBy(tabId),
+  aiTabFor: async (referrer) => {
+    const tabs = await chrome.tabs.query({});
+    const same = tabs.filter((t) => t.url === referrer && t.id !== undefined);
+    if (same.length === 0) {
+      return null;
+    }
+
+    for (const t of same) {
+      if ((await tabRegistry.ownedBy(t.id as number)) === null) {
+        return null;
+      }
+    }
+
+    return same[0]?.id ?? null;
+  },
+  stray: (conversation, d) => {
+    const site = siteOf(d.referrer) ?? siteOf(d.url) ?? 'the page';
+    notices.add(conversation, `Outside your browser actions, ${site} started downloading "${d.filename}" in your tab; it was cancelled and not saved. If you need the file, start the download again with a browser action.`);
+  },
+});
 
 let stopped = false;
 let lastStatus: ConnectionStatus = { state: 'offline' };
@@ -120,6 +164,8 @@ const services: Services = {
   transport: () => manager.transport,
   maxFileBytes: () => manager.maxFileBytes,
   stopped: () => stopped,
+  acting,
+  notices,
 };
 
 const scheduler = new Scheduler((request, signal) => runRequest(services, request, signal), emitResult);
@@ -152,6 +198,22 @@ async function resume(): Promise<void> {
 }
 
 // ---- 浏览器事件 ----
+
+// 兜底：AI 动作期间还是从 AI 标签冒出了新标签（页面脚本绕过了新开标签的守卫），立即关掉，并告诉模型。
+// 关得再快也挡不住它已经发出的请求，主防线是 newtab-guard.ts 把导航留在本标签。
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id === undefined || tab.openerTabId === undefined || !acting.has(tab.openerTabId)) {
+    return;
+  }
+
+  const newTab = tab.id;
+  void tabRegistry.ownedBy(tab.openerTabId).then((conversation) => {
+    void chrome.tabs.remove(newTab).catch(() => undefined);
+    if (conversation !== null) {
+      notices.add(conversation, 'The page opened a new browser tab during your action; it was closed. Links that open a new tab are followed in your current tab instead.');
+    }
+  });
+});
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   void tabRegistry.onTabRemoved(tabId);

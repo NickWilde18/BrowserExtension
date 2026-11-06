@@ -153,6 +153,17 @@ export class TabRegistry {
     return null;
   }
 
+  /** 这个标签是哪个对话里 AI 自己开的（不含用户共享进来的页面）。 */
+  async ownedBy(tabId: number): Promise<string | null> {
+    for (const [id, c] of Object.entries(await this.all())) {
+      if (c.tabs.includes(tabId)) {
+        return id;
+      }
+    }
+
+    return null;
+  }
+
   /** 新开一个 AI 标签（about:blank），放进本对话的 AI 标签组，设为当前。 */
   async createTab(conversation: string): Promise<number> {
     const all = await this.all();

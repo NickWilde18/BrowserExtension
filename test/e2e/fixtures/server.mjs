@@ -78,6 +78,14 @@ const pages = {
     <a href="/landing.html" id="same">Same site</a>
     <a href="/redirect" id="redir">Redirect away</a>`),
   '/landing.html': page('Landing', '<h1>Landing</h1>'),
+  '/newtab.html': page('New tabs', `
+    <a href="${B}/landing.html?via=link" target="_blank" id="blank">Open elsewhere</a>
+    <a href="/landing.html?via=same" target="_blank" id="blank-same">Open here in a new tab</a>
+    <button id="pop" type="button">Pop up</button>
+    <form action="${B}/landing.html" method="get" target="_blank"><input name="via" value="form" aria-label="Via"><button type="submit">Send away</button></form>
+    <button id="late" type="button">Download later</button>`, `
+    document.getElementById('pop').onclick = () => { window.open('${B}/landing.html?via=open'); };
+    document.getElementById('late').onclick = () => { setTimeout(() => { location.href = '/files/report.txt'; }, 1500); };`),
   '/console.html': page('Console', `<button id="go" type="button">Load data</button><p id="st"></p>`, `
     console.log('hello from console', 42);
     console.warn('careful');

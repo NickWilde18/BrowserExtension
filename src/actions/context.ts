@@ -25,6 +25,16 @@ export interface Services {
   transport(): Transport | null;
   maxFileBytes(): number;
   stopped(): boolean;
+  /** 正在执行动作的 AI 标签（后台据此关掉动作期间从它冒出来的新标签，见 newtab-guard.ts）。 */
+  acting: Set<number>;
+  /** 动作之外发生、要在这个对话的下一个结果里告诉模型的事（如被取消的下载）。 */
+  notices: Notices;
+}
+
+export interface Notices {
+  add(conversation: string, text: string): void;
+  /** 取走这个对话攒下的说明。 */
+  take(conversation: string): string[];
 }
 
 /** 下载处理的结果，进触发它的那个动作的 payload。 */
@@ -33,6 +43,12 @@ export interface DownloadOutcome {
   denied?: boolean;
   error?: ActionError;
 }
+
+/** 下载失败时的说明：动作本身（点击、提交）已经生效，只是文件没取回来；写明这一点，免得模型重点一次、重复提交。 */
+const DOWNLOAD_DONE = 'The action itself went through (do not repeat it); ';
+const DOWNLOAD_NOT_CONNECTED = DOWNLOAD_DONE + 'only the file it downloaded could not be sent to the conversation because the browser is not connected.';
+const DOWNLOAD_TOO_LARGE = DOWNLOAD_DONE + 'only the file it downloaded is larger than the size limit for files in the conversation.';
+const DOWNLOAD_NOT_RETRIEVED = DOWNLOAD_DONE + 'only the file it downloaded could not be retrieved.';
 
 /** 动作执行完、等页面稳定的上限。 */
 const SETTLE_MAX_MS = 10_000;
@@ -207,6 +223,8 @@ export class ActionContext implements GateContext {
       this.downloadJobs.push(this.handleDownload(s, d));
     });
     const stopWaiting = new AbortController();
+    this.services.acting.add(s.tabId);
+    await s.setActing(true);
 
     try {
       const dialog = s.waitFor((m) => m === 'Page.javascriptDialogOpening', 3_600_000,
@@ -231,6 +249,8 @@ export class ActionContext implements GateContext {
       stopWaiting.abort();
       watch.dispose();
       disarm();
+      this.services.acting.delete(s.tabId);
+      await s.setActing(false).catch(() => undefined);
       await guard.disable();
     }
   }
@@ -266,12 +286,12 @@ export class ActionContext implements GateContext {
   private async deliverDownload(name: string, contentType: string, bytes: Uint8Array<ArrayBuffer>): Promise<DownloadOutcome> {
     const transport = this.services.transport();
     if (!transport) {
-      return { error: new ActionError('action_failed', 'The download could not be sent to the conversation because the browser is not connected.') };
+      return { error: new ActionError('action_failed', DOWNLOAD_NOT_CONNECTED) };
     }
 
     const max = this.services.maxFileBytes();
     if (max > 0 && bytes.length > max) {
-      return { error: new ActionError('file_too_large', 'The downloaded file is larger than the size limit for files in the conversation.') };
+      return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
     }
 
     const type = contentType.split(';')[0]?.trim() || 'application/octet-stream';
@@ -285,7 +305,7 @@ export class ActionContext implements GateContext {
     const name = filenameFromDisposition(d.disposition) || filenameFromUrl(d.url);
     const max = this.services.maxFileBytes();
     if (max > 0 && d.size !== null && d.size > max) {
-      return { error: new ActionError('file_too_large', 'The downloaded file is larger than the size limit for files in the conversation.') };
+      return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
     }
 
     if (!await this.confirmDownload(s, d.url, name, d.size, d.contentType)) {
@@ -296,7 +316,7 @@ export class ActionContext implements GateContext {
       const body = await d.body();
       return await this.deliverDownload(name, d.contentType, new Uint8Array(body));
     } catch {
-      return { error: new ActionError('action_failed', 'The download started, but the extension could not retrieve the file.') };
+      return { error: new ActionError('action_failed', DOWNLOAD_NOT_RETRIEVED) };
     }
   }
 
@@ -307,7 +327,7 @@ export class ActionContext implements GateContext {
     }
 
     if (!this.services.transport()) {
-      return { error: new ActionError('action_failed', 'The download could not be sent to the conversation because the browser is not connected.') };
+      return { error: new ActionError('action_failed', DOWNLOAD_NOT_CONNECTED) };
     }
 
     const max = this.services.maxFileBytes();
@@ -317,10 +337,10 @@ export class ActionContext implements GateContext {
 
     if (!meta.ok) {
       if (meta.reason === 'too_large') {
-        return { error: new ActionError('file_too_large', 'The downloaded file is larger than the size limit for files in the conversation.') };
+        return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
       }
 
-      return { error: new ActionError('action_failed', 'The download started, but the extension could not retrieve the file from the page.') };
+      return { error: new ActionError('action_failed', DOWNLOAD_NOT_RETRIEVED) };
     }
 
     const size = meta.size ?? 0;

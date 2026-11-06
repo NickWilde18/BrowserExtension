@@ -48,8 +48,21 @@ function errorResult(requestId: string, err: ActionError, page?: PageInfo): Resu
   return r;
 }
 
-/** 执行一个请求，返回结果帧（不抛异常）。 */
+/**
+ * 执行一个请求，返回结果帧（不抛异常）。动作之外发生过的事（被取消的下载、被关掉的新标签）附在这个对话这一次
+ * 结果的 message 里告诉模型（成功、失败都带）。
+ */
 export async function runRequest(services: Services, request: RequestFrame, signal: AbortSignal): Promise<ResultFrame> {
+  const result = await executeRequest(services, request, signal);
+  const notes = services.notices.take(request.conversation);
+  if (notes.length) {
+    result.message = [result.message, ...notes].filter(Boolean).join(' ');
+  }
+
+  return result;
+}
+
+async function executeRequest(services: Services, request: RequestFrame, signal: AbortSignal): Promise<ResultFrame> {
   if (services.stopped()) {
     return errorResult(request.request_id, new ActionError('user_stopped', STOPPED_MESSAGE));
   }

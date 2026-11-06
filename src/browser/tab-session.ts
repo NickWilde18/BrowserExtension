@@ -11,6 +11,7 @@ import { siteOf } from '../policy/url';
 import { ActionError } from '../protocol/errors';
 import type { PageDialog, PageInfo } from '../protocol/frames';
 import { Cdp, CdpError } from './cdp';
+import { NEWTAB_GUARD_SOURCE, actingExpression } from './newtab-guard';
 import { pageAgent } from './page-agent';
 import { Recorder } from './recorder';
 
@@ -450,11 +451,36 @@ export class TabSession {
       this.cdp.send('Log.enable', {}, sessionId),
     ]);
 
+    // 新开标签的守卫：每个新文档先于页面脚本装上，已经在的文档立即装（runImmediately），见 newtab-guard.ts。
+    await this.cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: NEWTAB_GUARD_SOURCE, runImmediately: true }, sessionId);
+
     try {
       await this.cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
     } catch {
       // 不支持子会话的版本：跨源 iframe 读不到，其余照常。
     }
+  }
+
+  /** 打开 / 关上新开标签的守卫（AI 动作期间打开）。每个框架的主世界各设一次；对话框开着时脚本被阻塞，跳过。 */
+  async setActing(on: boolean): Promise<void> {
+    if (this.dialog) {
+      return;
+    }
+
+    const expression = actingExpression(on);
+    await Promise.allSettled([...this.frames.values()].map((f) => {
+      const params: Record<string, unknown> = { expression };
+      if (f.mainContext !== null) {
+        params.contextId = f.mainContext;
+      } else if (f.id !== this.mainFrameId) {
+        return Promise.resolve();
+      }
+
+      return Promise.race([
+        this.cdp.send('Runtime.evaluate', params, f.sessionId),
+        new Promise((r) => setTimeout(r, 1000)),
+      ]);
+    }));
   }
 
   private registerTree(tree: FrameTree, sessionId: string | undefined): void {

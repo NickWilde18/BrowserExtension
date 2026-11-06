@@ -1,10 +1,15 @@
-// 下载拦截（计划 4.5「下载」、4.7「下载交回到哪」）。
+// 不经导航的下载拦截（计划 4.5「下载」、4.7「下载交回到哪」；导航类下载在 navguard.ts 的响应阶段截下）。
 //
-// AI 的动作执行期间，AI 标签里触发的下载由插件拦下：先取消浏览器自己的下载（不落进用户的下载目录），
-// 再交给动作去做逐次确认，允许后在页面里带着登录态把文件重新取一次、送回 Chat 存成交付文件。
+// AI 自己开的标签里的下载一律不落进用户的下载目录：
+// - AI 的动作执行期间：先取消浏览器自己的下载，再交给动作做逐次确认，允许后在页面里带着登录态把文件重新取一次、
+//   送回 Chat 存成交付文件；
+// - 动作之外（页面延迟触发、用户自己点的）：没有请求可以交回 Chat，只取消，交给 onStray 记下来，在这个对话的
+//   下一个结果里告诉模型。
+// 用户共享进来的页面、AI 标签之外的标签里的下载不碰。
 //
-// 下载归属：调试接口的 Page.downloadWillBegin 带着网址（来自哪个附着的标签页是确定的），用它和
-// chrome.downloads.onCreated 的网址对上；对不上的不是 AI 触发的，不碰（用户自己的下载照常）。
+// 下载归属：附着着的标签页会报 Page.downloadWillBegin（带网址，来自哪个标签页是确定的），用它和
+// chrome.downloads.onCreated 的网址对上；没附着时按下载的来源页（referrer）认，只有打开这个网址的标签全是 AI
+// 自己开的标签时才算（否则可能是用户在自己的标签里打开了同一个页面）。
 
 export interface DownloadSeen {
   url: string;
@@ -12,6 +17,17 @@ export interface DownloadSeen {
   contentType: string;
   /** 浏览器知道的大小；不知道时为 null。 */
   size: number | null;
+  /** 下载的来源页（referrer），没有时为空。 */
+  referrer: string;
+}
+
+export interface DownloadHooks {
+  /** 这个标签是不是某个对话里 AI 自己开的标签；是就返回对话 id。 */
+  ownedBy(tabId: number): Promise<string | null>;
+  /** 按来源页网址找 AI 标签：打开这个网址的标签全是 AI 自己开的才返回其中一个，否则 null。 */
+  aiTabFor(referrer: string): Promise<number | null>;
+  /** 动作之外 AI 标签里的下载，已取消。 */
+  stray(conversation: string, d: DownloadSeen): void;
 }
 
 interface Hint {
@@ -33,11 +49,35 @@ function nameFromUrl(url: string): string {
   }
 }
 
+/** 取消浏览器自己的这次下载，并从下载列表里抹掉；已经下完的删掉文件。 */
+async function discard(item: chrome.downloads.DownloadItem): Promise<void> {
+  try {
+    await chrome.downloads.cancel(item.id);
+  } catch {
+    // 取消不了说明已经下完。
+  }
+
+  try {
+    const [now] = await chrome.downloads.search({ id: item.id });
+    if (now?.state === 'complete') {
+      await chrome.downloads.removeFile(item.id);
+    }
+  } catch {
+    // 文件已经不在。
+  }
+
+  try {
+    await chrome.downloads.erase({ id: item.id });
+  } catch {
+    // 列表里已经没有。
+  }
+}
+
 export class DownloadWatcher {
   private readonly armed = new Map<number, (d: DownloadSeen) => void>();
   private hints: Hint[] = [];
 
-  constructor() {
+  constructor(private readonly hooks: DownloadHooks) {
     chrome.downloads.onCreated.addListener((item) => {
       void this.onCreated(item);
     });
@@ -63,37 +103,32 @@ export class DownloadWatcher {
   private async onCreated(item: chrome.downloads.DownloadItem): Promise<void> {
     const now = Date.now();
     const hint = this.hints.find((h) => now - h.at < HINT_TTL_MS && (h.url === item.url || h.url === item.finalUrl));
-    if (!hint) {
+    if (hint) {
+      this.hints = this.hints.filter((h) => h !== hint);
+    }
+
+    const tabId = hint?.tabId ?? (item.referrer ? await this.hooks.aiTabFor(item.referrer) : null);
+    if (tabId === null || tabId === undefined) {
       return;
     }
 
-    const handler = this.armed.get(hint.tabId);
-    if (!handler) {
+    const handler = this.armed.get(tabId);
+    const owner = handler ? null : await this.hooks.ownedBy(tabId);
+    if (!handler && owner === null) {
+      // 附着着、但不是 AI 自己开的标签（用户共享进来的页面），动作之外的下载照常。
       return;
     }
 
-    this.hints = this.hints.filter((h) => h !== hint);
-
-    try {
-      await chrome.downloads.cancel(item.id);
-    } catch {
-      // 已经下完：删掉文件。
-      try {
-        await chrome.downloads.removeFile(item.id);
-      } catch {
-        // 文件已经不在。
-      }
-    }
-
-    try {
-      await chrome.downloads.erase({ id: item.id });
-    } catch {
-      // 列表里已经没有。
-    }
+    await discard(item);
 
     const size = item.totalBytes > 0 ? item.totalBytes : item.fileSize > 0 ? item.fileSize : null;
-    const filename = hint.suggestedFilename || item.filename.split(/[\\/]/).pop() || nameFromUrl(item.finalUrl || item.url);
+    const filename = hint?.suggestedFilename || item.filename.split(/[\\/]/).pop() || nameFromUrl(item.finalUrl || item.url);
+    const seen: DownloadSeen = { url: item.finalUrl || item.url, filename, contentType: item.mime || '', size, referrer: item.referrer || '' };
 
-    handler({ url: item.finalUrl || item.url, filename, contentType: item.mime || '', size });
+    if (handler) {
+      handler(seen);
+    } else if (owner !== null) {
+      this.hooks.stray(owner, seen);
+    }
   }
 }
