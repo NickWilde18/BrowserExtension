@@ -150,6 +150,43 @@ describe('Scheduler', () => {
     expect(s.pending).toBe(0);
   });
 
+  it('结束只取消本轮，等待释放再开始下一轮，拒绝结束后的迟到动作', async () => {
+    const started: RequestFrame[] = [];
+    const results: ResultFrame[] = [];
+    const releaseGate = deferred();
+    const s = new Scheduler((r, signal) => {
+      started.push(r);
+      if (r.turn_id !== 'old') return Promise.resolve(ok(r));
+      return new Promise<ResultFrame>((resolve) => {
+        signal.addEventListener('abort', () => resolve({ type: 'result', request_id: r.request_id, outcome: 'error', code: 'timeout' }));
+      });
+    }, (r) => results.push(r));
+    const running = { ...req('A'), turn_id: 'old' };
+    const queued = { ...req('A'), turn_id: 'old' };
+    const next = { ...req('A'), turn_id: 'new' };
+    s.submit(running);
+    s.submit(queued);
+    const finishing = s.finishTurn('A', 'old', () => releaseGate.promise);
+    expect(s.finishTurn('A', 'old', () => Promise.reject(new Error('duplicate')))).toBe(finishing);
+    s.submit(next);
+    s.submit({ ...req('B'), turn_id: 'other' });
+    await flush();
+    expect(started.map((r) => r.conversation)).toEqual(['A', 'B']);
+    expect(results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ request_id: queued.request_id, code: 'timeout' }),
+      expect.objectContaining({ request_id: running.request_id, code: 'timeout' }),
+    ]));
+    releaseGate.resolve();
+    await finishing;
+    await flush();
+    expect(started.at(-1)?.request_id).toBe(next.request_id);
+    const late = { ...req('A'), turn_id: 'old' };
+    s.submit(late);
+    expect(results.at(-1)).toMatchObject({ request_id: late.request_id, code: 'timeout' });
+    expect(started).not.toContainEqual(late);
+    expect(s.pending).toBe(0);
+  });
+
   it('执行器抛异常也回一个结果（action_failed），不把异常文本交出去', async () => {
     const results: ResultFrame[] = [];
     const s = new Scheduler(async () => {

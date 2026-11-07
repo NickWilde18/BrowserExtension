@@ -105,6 +105,10 @@ export class ActionContext implements GateContext {
     return this.request.request_id;
   }
 
+  get conversationTitle(): string {
+    return this.request.conversation_title;
+  }
+
   readonly authWait = {
     remainingMs: (): number => Math.max(0, this.authLeft),
     consume: (ms: number): void => {
@@ -160,12 +164,14 @@ export class ActionContext implements GateContext {
   }
 
   async attach(tabId: number): Promise<TabSession> {
+    this.throwIfAborted();
     if (this.services.stopped()) {
       throw new ActionError('user_stopped', STOPPED_MESSAGE);
     }
 
     await reloadIfDiscarded(tabId, this.signal);
-    const s = await this.services.sessions.get(tabId);
+    this.throwIfAborted();
+    const s = await this.services.sessions.get(tabId, this.request, this.signal);
     s.onDownloadWillBegin = (p) => this.services.downloads.hint(tabId, p.url, p.suggestedFilename);
     // 浏览器省电时会冻结后台页面，冻结的页面里点击等输入一直不返回（实测）：先解冻。
     await s.cdp.send('Page.setWebLifecycleState', { state: 'active' }).catch(() => undefined);

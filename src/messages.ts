@@ -25,6 +25,8 @@ export interface PromptView {
   id: string;
   kind: ApprovalKind;
   site: string;
+  /** 发起请求的对话标题；没有标题时不展示来源行。 */
+  conversationTitle?: string;
   /** 按种类：download 有 filename/size/content_type，script 有 source，password 有 field，upload 有 field/files。 */
   detail: Record<string, unknown>;
   /** 自动审查拦下时的理由。 */

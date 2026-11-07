@@ -44,6 +44,8 @@ export interface RequestFrame {
   conversation: string;
   /** 对话标题（最多 200 字，可能为空），只给弹窗显示「将共享给：<标题>」用（契约 3.2）。 */
   conversation_title: string;
+  /** 本轮任务的标识；旧服务没有该字段时保留原有空闲回收。 */
+  turn_id?: string;
   deadline_ms: number;
   auth_wait_ms: number;
 }
@@ -51,6 +53,19 @@ export interface RequestFrame {
 export interface CancelFrame {
   type: 'cancel';
   request_id: string;
+}
+
+/** 只释放指定回合的调试附着，不关闭网页或平台连接。 */
+export interface ReleaseFrame {
+  type: 'release';
+  turn_id: string;
+  conversation: string;
+}
+
+export interface ReleasedFrame {
+  type: 'released';
+  turn_id: string;
+  conversation: string;
 }
 
 export interface ApprovalFrame {
@@ -67,7 +82,7 @@ export interface ClosedFrame {
   reason: string;
 }
 
-export type InboundFrame = ReadyFrame | PingFrame | RequestFrame | CancelFrame | ApprovalFrame | ClosedFrame;
+export type InboundFrame = ReadyFrame | PingFrame | RequestFrame | CancelFrame | ReleaseFrame | ApprovalFrame | ClosedFrame;
 
 // ---- 插件 → Chat ----
 
@@ -118,7 +133,7 @@ export interface ResultFrame {
   payload?: Record<string, unknown>;
 }
 
-export type OutboundFrame = HelloFrame | ProgressFrame | ApprovalRequestFrame | ResultFrame | { type: 'pong' };
+export type OutboundFrame = HelloFrame | ProgressFrame | ApprovalRequestFrame | ResultFrame | ReleasedFrame | { type: 'pong' };
 
 // ---- 校验 ----
 
@@ -169,7 +184,8 @@ export function parseInbound(raw: unknown): InboundFrame | null {
     case 'request': {
       if (!isUUID(raw.request_id) || typeof raw.action !== 'string' ||
         !(ACTIONS as readonly string[]).includes(raw.action) || !isObject(raw.args) || !isUUID(raw.conversation) ||
-        !isPositiveInt(raw.deadline_ms, 10 * 60_000) || !isPositiveInt(raw.auth_wait_ms, 30 * 60_000)) {
+        !isPositiveInt(raw.deadline_ms, 10 * 60_000) || !isPositiveInt(raw.auth_wait_ms, 30 * 60_000) ||
+        (raw.turn_id !== undefined && !isUUID(raw.turn_id))) {
         return null;
       }
 
@@ -178,6 +194,7 @@ export function parseInbound(raw: unknown): InboundFrame | null {
         request_id: raw.request_id,
         action: raw.action as ActionName,
         args: raw.args,
+        ...(raw.turn_id === undefined ? {} : { turn_id: raw.turn_id as string }),
         conversation: raw.conversation,
         conversation_title: typeof raw.conversation_title === 'string' ? [...raw.conversation_title].slice(0, 200).join('') : '',
         deadline_ms: raw.deadline_ms,
@@ -186,6 +203,9 @@ export function parseInbound(raw: unknown): InboundFrame | null {
     }
     case 'cancel':
       return isUUID(raw.request_id) ? { type: 'cancel', request_id: raw.request_id } : null;
+    case 'release':
+      return isUUID(raw.turn_id) && isUUID(raw.conversation)
+        ? { type: 'release', turn_id: raw.turn_id, conversation: raw.conversation } : null;
     case 'approval': {
       if (!isUUID(raw.request_id) || typeof raw.approval_id !== 'string' || !APPROVAL_ID_RE.test(raw.approval_id) ||
         typeof raw.kind !== 'string' || typeof raw.decision !== 'string') {

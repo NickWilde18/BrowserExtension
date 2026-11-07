@@ -20,6 +20,9 @@ export const DEV_PUBLIC_KEY =
 export const DEV_EXTENSION_ID = 'agagklnjfndomhambbpfhenaoclcbpmo';
 
 export function buildManifest({ version, platformOrigin, key }) {
+  // Cookie 变化事件按协议与主机匹配，不带端口；实际请求仍使用完整平台来源。
+  const platform = new URL(platformOrigin);
+  const hostPermission = `${platform.protocol}//${platform.hostname}/*`;
   return {
     manifest_version: 3,
     name: '__MSG_extName__',
@@ -31,8 +34,18 @@ export function buildManifest({ version, platformOrigin, key }) {
     minimum_chrome_version: '125',
     key,
     background: { service_worker: 'background.js', type: 'module' },
-    action: { default_popup: 'popup.html', default_title: '__MSG_extName__' },
+    icons: {
+      16: 'icons/browser-assistant-16.png',
+      32: 'icons/browser-assistant-32.png',
+      48: 'icons/browser-assistant-48.png',
+      128: 'icons/browser-assistant-128.png',
+    },
+    action: {
+      default_popup: 'popup.html',
+      default_title: '__MSG_extName__',
+      default_icon: { 16: 'icons/browser-assistant-16.png', 32: 'icons/browser-assistant-32.png' },
+    },
     permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies'],
-    host_permissions: [`${platformOrigin}/*`],
+    host_permissions: [hostPermission],
   };
 }

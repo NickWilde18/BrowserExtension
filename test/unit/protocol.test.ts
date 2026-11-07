@@ -27,6 +27,18 @@ describe('parseInbound', () => {
     expect(parseInbound({ type: 'closed', reason: 'replaced' })).toEqual({ type: 'closed', reason: 'replaced' });
   });
 
+  it('回合标识与释放帧校验；旧请求不要求回合标识', () => {
+    const base = { type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 };
+    expect(parseInbound({ ...base, turn_id: RID })).toMatchObject({ turn_id: RID });
+    expect(parseInbound(base)).not.toHaveProperty('turn_id');
+    expect(parseInbound({ ...base, turn_id: 'invalid' })).toBeNull();
+    expect(parseInbound({ type: 'release', conversation: CONV, turn_id: RID }))
+      .toEqual({ type: 'release', conversation: CONV, turn_id: RID });
+    expect(parseInbound({ type: 'release', conversation: CONV })).toBeNull();
+    expect(parseInbound({ type: 'release', conversation: 'invalid', turn_id: RID })).toBeNull();
+    expect(parseInbound({ type: 'release', conversation: CONV, turn_id: 'invalid' })).toBeNull();
+  });
+
   it('未知类型与格式不对的帧丢弃（返回 null），不抛异常', () => {
     expect(parseInbound({ type: 'mystery' })).toBeNull();
     expect(parseInbound('ping')).toBeNull();

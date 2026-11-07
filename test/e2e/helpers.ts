@@ -166,9 +166,20 @@ export async function approvalWindow(h: Harness): Promise<Page> {
 }
 
 /** 在确认小窗里点一个按钮（按文字）。 */
+/** 确认会同步关窗，CDP 的按键或点击回执可能晚于关窗；只接纳已确认关窗的这一种回执错误。 */
+export async function actOnPrompt(page: Page, action: () => Promise<void>): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (!page.isClosed() || !(error instanceof Error) || !error.message.includes('Target page, context or browser has been closed')) {
+      throw error;
+    }
+  }
+}
+
 export async function answer(h: Harness, label: string | RegExp): Promise<void> {
   const page = await approvalWindow(h);
-  await page.locator('#buttons button', { hasText: label }).click();
+  await actOnPrompt(page, () => page.locator('#buttons button', { hasText: label }).click());
 }
 
 /** 预先给对话授权站点（跳过站点授权小窗）。 */

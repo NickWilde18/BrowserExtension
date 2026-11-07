@@ -140,6 +140,17 @@ const manager = new ConnectionManager({
       case 'approval':
         registry.receive(frame);
         break;
+      case 'release': {
+        const generation = accountGeneration;
+        void scheduler.finishTurn(frame.conversation, frame.turn_id,
+          () => sessions.release(frame.conversation, frame.turn_id)).then(() => {
+          if (generation === accountGeneration) {
+            // 服务端保留未确认的释放，断线后会补投；不把上一账号的确认发给新账号。
+            return manager.send({ type: 'released', turn_id: frame.turn_id, conversation: frame.conversation });
+          }
+        }).catch(() => undefined);
+        break;
+      }
       default:
     }
   },

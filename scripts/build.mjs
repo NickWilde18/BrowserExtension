@@ -133,6 +133,7 @@ for (const file of ['popup.html', 'popup.css', 'approval.html', 'approval.css'])
 }
 
 cpSync(path.join(root, '_locales'), path.join(outDir, '_locales'), { recursive: true });
+cpSync(path.join(root, 'static', 'icons'), path.join(outDir, 'icons'), { recursive: true });
 
 const thirdParty = path.join(outDir, 'third_party', 'playwright');
 mkdirSync(thirdParty, { recursive: true });

@@ -12,22 +12,29 @@ import type { RequestFrame, ResultFrame } from './protocol/frames';
 export interface AbortReason {
   code: Extract<ErrorCode, 'timeout' | 'user_stopped'>;
   message: string;
+  /** 回合级释放统一处理所有附着，执行器不要再强制断开单页。 */
+  turnEnded?: boolean;
 }
 
 export type Executor = (request: RequestFrame, signal: AbortSignal) => Promise<ResultFrame>;
 
 interface Lane {
-  running: { request: RequestFrame; ctrl: AbortController } | null;
+  running: { request: RequestFrame; ctrl: AbortController; done: Promise<void> } | null;
   queue: RequestFrame[];
+  releasing: number;
 }
 
 /** 记住见过的 request_id 的个数上限（去重用）。 */
 const SEEN_LIMIT = 2000;
+/** 超过服务端请求最长存活时间，之后不再需要拦截这一轮的迟到请求。 */
+const FINISHED_TURN_TTL_MS = 60 * 60_000;
 
 export class Scheduler {
   private readonly lanes = new Map<string, Lane>();
   private readonly seen = new Set<string>();
   private readonly answered = new Set<string>();
+  private readonly finished = new Map<string, number>();
+  private readonly finishing = new Map<string, Promise<void>>();
 
   constructor(
     private readonly execute: Executor,
@@ -41,6 +48,11 @@ export class Scheduler {
     }
 
     this.remember(request.request_id);
+    this.expireFinished();
+    if (request.turn_id && this.finished.has(`${request.conversation}:${request.turn_id}`)) {
+      this.answerEnded(request);
+      return;
+    }
 
     const lane = this.lane(request.conversation);
     if (lane.running && lane.queue.length >= this.maxQueued) {
@@ -82,6 +94,57 @@ export class Scheduler {
     }
   }
 
+  /**
+   * 回合结束：拦住迟到请求、取消本轮待执行动作，再释放附着。
+   * 断开附着会唤醒可能卡住的调试命令；等本轮执行器退出后才允许同一对话继续排队动作。
+   */
+  finishTurn(conversation: string, turnId: string, release: () => Promise<void>): Promise<void> {
+    const key = `${conversation}:${turnId}`;
+    const existing = this.finishing.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    this.expireFinished();
+    this.finished.set(key, Date.now());
+    const lane = this.lane(conversation);
+    lane.releasing++;
+    const running = lane.running?.request.turn_id === turnId ? lane.running : null;
+    running?.ctrl.abort({ code: 'timeout', message: 'This browser turn has ended.', turnEnded: true } satisfies AbortReason);
+    lane.queue = lane.queue.filter((r) => {
+      if (r.turn_id !== turnId) {
+        return true;
+      }
+
+      this.answerEnded(r);
+      return false;
+    });
+    const done = (async () => {
+      try {
+        await release();
+        await running?.done;
+      } finally {
+        lane.releasing--;
+        this.pump(conversation);
+      }
+    })().finally(() => this.finishing.delete(key));
+    this.finishing.set(key, done);
+    return done;
+  }
+
+  private answerEnded(request: RequestFrame): void {
+    this.answer({ type: 'result', request_id: request.request_id, outcome: 'error', code: 'timeout', message: 'This browser turn has ended.' });
+  }
+
+  private expireFinished(): void {
+    const before = Date.now() - FINISHED_TURN_TTL_MS;
+    for (const [key, at] of this.finished) {
+      if (at < before) {
+        this.finished.delete(key);
+      }
+    }
+  }
+
   /** 用户叫停（提示条上的「取消」、弹窗里的「停止」）：正在跑的中止，排队的全部回 user_stopped。 */
   stopAll(message: string): void {
     this.abortAll({ code: 'user_stopped', message });
@@ -112,7 +175,7 @@ export class Scheduler {
 
   private pump(conversation: string): void {
     const lane = this.lanes.get(conversation);
-    if (!lane || lane.running) {
+    if (!lane || lane.running || lane.releasing > 0) {
       return;
     }
 
@@ -123,9 +186,10 @@ export class Scheduler {
     }
 
     const ctrl = new AbortController();
-    lane.running = { request, ctrl };
+    const running = { request, ctrl, done: Promise.resolve() };
+    lane.running = running;
 
-    void this.run(request, ctrl).finally(() => {
+    running.done = this.run(request, ctrl).finally(() => {
       lane.running = null;
       this.pump(conversation);
     });
@@ -177,7 +241,7 @@ export class Scheduler {
   private lane(conversation: string): Lane {
     let lane = this.lanes.get(conversation);
     if (!lane) {
-      lane = { running: null, queue: [] };
+      lane = { running: null, queue: [], releasing: 0 };
       this.lanes.set(conversation, lane);
     }
 
@@ -186,7 +250,7 @@ export class Scheduler {
 
   private dropIfIdle(conversation: string): void {
     const lane = this.lanes.get(conversation);
-    if (lane && !lane.running && lane.queue.length === 0) {
+    if (lane && !lane.running && lane.queue.length === 0 && lane.releasing === 0) {
       this.lanes.delete(conversation);
     }
   }

@@ -20,6 +20,7 @@ const ALLOWED: Record<ApprovalKind, { choose: PromptAnswer[]; self_wait: PromptA
 export interface PromptSpec {
   kind: ApprovalKind;
   site: string;
+  conversationTitle?: string;
   detail: Record<string, unknown>;
   reason?: string;
   timeoutMs: number;
@@ -44,7 +45,8 @@ export interface WindowOps {
 
 export const chromeWindowOps: WindowOps = {
   async open(url) {
-    const win = await chrome.windows.create({ url, type: 'popup', width: 460, height: 600, focused: true });
+    // 先用紧凑尺寸打开；页面拿到内容后连同浏览器边框一起量高，不为短确认固定预留大片空白。
+    const win = await chrome.windows.create({ url, type: 'popup', width: 480, height: 400, focused: true });
     if (win?.id === undefined) {
       throw new Error('window not created');
     }
@@ -80,6 +82,10 @@ export class PromptManager {
 
     if (spec.reason !== undefined) {
       view.reason = spec.reason;
+    }
+
+    if (spec.conversationTitle) {
+      view.conversationTitle = spec.conversationTitle;
     }
 
     const entry: Open = { view, windowId: null, resolve: null, timer: null, onAbort: null, signal: spec.signal };

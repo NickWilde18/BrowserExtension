@@ -14,7 +14,7 @@
 
 import { KEEPALIVE_INTERVAL_MS, PROTOCOL_VERSION, READY_TIMEOUT_MS } from '../config';
 import { parseInbound } from '../protocol/frames';
-import type { ApprovalFrame, CancelFrame, HelloFrame, OutboundFrame, ReadyFrame, RequestFrame } from '../protocol/frames';
+import type { ApprovalFrame, CancelFrame, HelloFrame, OutboundFrame, ReadyFrame, ReleaseFrame, RequestFrame } from '../protocol/frames';
 import { TransportError } from './transport';
 import type { Transport, TransportCloseInfo } from './transport';
 
@@ -61,7 +61,7 @@ const realTimers: Timers = {
   now: () => Date.now(),
 };
 
-export type ConnectionFrame = RequestFrame | CancelFrame | ApprovalFrame;
+export type ConnectionFrame = RequestFrame | CancelFrame | ApprovalFrame | ReleaseFrame;
 
 export interface ManagerDeps {
   /** 每次（重）连新建一个传输。 */

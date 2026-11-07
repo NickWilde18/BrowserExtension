@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Gate } from '../../src/approval/gate';
 import type { GateContext } from '../../src/approval/gate';
-import { PromptManager } from '../../src/approval/prompts';
+import { chromeWindowOps, PromptManager } from '../../src/approval/prompts';
 import type { WindowOps } from '../../src/approval/prompts';
 import { ApprovalRegistry } from '../../src/approval/registry';
 import { FakeServer, FakeTransport } from '../../src/connection/fake-transport';
@@ -10,6 +10,20 @@ import { ConnectionManager } from '../../src/connection/manager';
 import type { OutboundFrame } from '../../src/protocol/frames';
 
 const RID = '11111111-2222-4333-8444-555555555555';
+
+describe('确认窗：独立打开并留给页面按内容调整高度', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('短确认不再预留固定 600px 高度，仍使用独立 popup 并获得焦点', async () => {
+    const create = vi.fn().mockResolvedValue({ id: 12 });
+    vi.stubGlobal('chrome', { windows: { create } });
+    await expect(chromeWindowOps.open('chrome-extension://test/approval.html?id=one')).resolves.toBe(12);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ type: 'popup', focused: true }));
+    const options = create.mock.calls[0]![0] as chrome.windows.CreateData;
+    expect(options.height).toBeLessThan(600);
+    expect(options.height).toBeGreaterThanOrEqual(320);
+  });
+});
 
 describe('ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind）', () => {
   beforeEach(() => {
@@ -213,6 +227,24 @@ describe('Gate：先问审查、再问用户', () => {
     await expect(p).resolves.toMatchObject({ result: 'allow', by: 'user' });
     expect(sentFrames.map((f) => (f.type === 'progress' ? `progress:${f.stage}` : f.type)))
       .toEqual(['approval_request', 'progress:awaiting_user', 'progress:working']);
+  });
+
+  it('确认窗带上请求已有的会话标题；没有标题时不补造来源', async () => {
+    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
+    const ctx = { ...gateCtx(), conversationTitle: '课程 <b>报名</b>' };
+    const first = gate.confirm(ctx, { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => windows.opened.length > 0);
+    const w = windows.opened[0]!;
+    expect(prompts.view(w.id, w.windowId)).toMatchObject({ conversationTitle: '课程 <b>报名</b>' });
+    prompts.answer(w.id, w.windowId, 'deny');
+    await first;
+
+    const second = gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => windows.opened.length > 1);
+    const untitled = windows.opened[1]!;
+    expect(prompts.view(untitled.id, untitled.windowId)).not.toHaveProperty('conversationTitle');
+    prompts.answer(untitled.id, untitled.windowId, 'deny');
+    await second;
   });
 
   it('开关关掉或没连上：不发审批请求，直接问用户；站点的两种允许映射到范围', async () => {

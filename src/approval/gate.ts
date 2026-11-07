@@ -15,6 +15,8 @@ import type { PromptManager, PromptOutcome } from './prompts';
 /** 一次确认所在的请求。 */
 export interface GateContext {
   requestId: string;
+  /** 请求已有的对话标题，只用于本地确认窗。 */
+  conversationTitle?: string;
   signal: AbortSignal;
   /** 剩余的等用户时限（毫秒），每次确认从中扣除。 */
   authWait: { remainingMs(): number; consume(ms: number): void };
@@ -91,6 +93,7 @@ export class Gate {
       detail: req.promptDetail,
       timeoutMs: remaining,
       signal: ctx.signal,
+      ...(ctx.conversationTitle ? { conversationTitle: ctx.conversationTitle } : {}),
       ...(reason !== undefined ? { reason } : {}),
     };
     const { id, outcome } = await this.deps.prompts.ask(spec);

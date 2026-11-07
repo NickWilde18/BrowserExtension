@@ -1,7 +1,7 @@
 // 把关流程：站点授权、跨站跳转拦截、逐次确认（密码框、上传、下载、脚本）、Auto Mode 下的审批帧。
 import { expect, test } from '@playwright/test';
 
-import { A, B, CONV2, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, sent } from './helpers';
+import { A, B, CONV2, actOnPrompt, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, sent } from './helpers';
 import type { Harness } from './helpers';
 
 let h: Harness;
@@ -25,6 +25,93 @@ async function snapshot(): Promise<string> {
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
   return String(r.payload?.snapshot ?? '');
 }
+
+test('确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝', async () => {
+  h = await launch({ realViewport: true });
+  const pending = call(h, 'open', { url: `${A}/form.html` }, { title: '课程 <b>报名</b>' });
+  const win = await approvalWindow(h);
+  await expect(win).toHaveTitle(/Let the assistant use this site\? · AI Service Browser Assistant/);
+  await expect(win.locator('header')).toContainText('AI Service Browser Assistant');
+  expect(await win.locator('header img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  const icon = await win.locator('link[rel="icon"]').getAttribute('href');
+  expect(icon).toBeTruthy();
+  expect(await win.evaluate(async (href) => (await fetch(href!)).ok, icon)).toBe(true);
+  await expect(win.locator('#site')).toHaveText(A);
+  await expect(win.locator('#conversation')).toHaveText('课程 <b>报名</b>');
+  expect(await win.locator('#conversation').innerHTML()).not.toContain('<b>');
+  await expect(win.getByRole('button', { name: 'Deny', exact: true })).toBeFocused();
+  await actOnPrompt(win, () => win.keyboard.press('Enter'));
+  expect((await pending).code).toBe('user_denied');
+});
+
+for (const closeBy of ['button', 'Escape'] as const) {
+  test(`确认窗：${closeBy} 关闭只拒绝当前动作，不全局停止浏览器`, async () => {
+    h = await launch({ realViewport: true });
+    await allowSite(h, A);
+    await call(h, 'open', { url: `${A}/form.html` });
+    const id = await send(h, 'open', { url: `${B}/landing.html` });
+    const win = await approvalWindow(h);
+    await expect(win.locator('#conversationRow')).toBeHidden();
+    if (closeBy === 'button') {
+      await actOnPrompt(win, () => win.getByRole('button', { name: 'Close and deny this request' }).click({ timeout: 2000 }));
+    } else {
+      await actOnPrompt(win, () => win.keyboard.press('Escape'));
+    }
+
+    await expect.poll(() => win.isClosed(), { timeout: 2000 }).toBe(true);
+    expect((await result(h, id)).code).toBe('user_denied');
+    expect((await h.sw.evaluate(() => (globalThis as any).__bxTest.popupState())).stopped).toBe(false);
+    expect((await call(h, 'read')).outcome).toBe('ok');
+  });
+}
+
+test('确认窗：短内容收紧窗口，长脚本可滚动阅读且按钮始终可达', async () => {
+  h = await launch({ realViewport: true });
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  const win = await approvalWindow(h);
+  await expect.poll(() => win.evaluate(() => innerHeight - document.querySelector('main')!.getBoundingClientRect().height)).toBeLessThan(40);
+  await answer(h, 'This conversation only');
+  expect((await result(h, id)).outcome).toBe('ok');
+
+  const source = `() => {\n${'  // Read this line before deciding.\n'.repeat(80)}  return 1;\n}`;
+  const script = await send(h, 'evaluate', { function: source });
+  const long = await approvalWindow(h);
+  await expect(long.locator('pre')).toHaveText(source);
+  const code = long.getByRole('region', { name: 'Script to run' });
+  await expect(code).toHaveAttribute('tabindex', '0');
+  expect(await code.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await code.focus();
+  await long.keyboard.press('Control+End');
+  await expect.poll(() => code.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const deny = long.getByRole('button', { name: 'Deny', exact: true });
+  await deny.focus();
+  expect(await deny.evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight)).toBe(true);
+  expect(await long.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await actOnPrompt(long, () => long.keyboard.press('Enter'));
+  expect((await result(h, script)).code).toBe('user_denied');
+});
+
+test('确认窗：浅深主题均有明确底色与可读文字，窄窗口不横向溢出', async () => {
+  h = await launch();
+  const id = await send(h, 'open', { url: `${A}/form.html` });
+  const win = await approvalWindow(h);
+  const colors = [];
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await win.emulateMedia({ colorScheme });
+    colors.push(await win.evaluate(() => {
+      const css = getComputedStyle(document.body);
+      return { background: css.backgroundColor, text: css.color };
+    }));
+  }
+
+  expect(colors[0]!.background).not.toBe('rgba(0, 0, 0, 0)');
+  expect(colors[1]!.background).not.toBe(colors[0]!.background);
+  expect(colors[1]!.text).not.toBe(colors[0]!.text);
+  await win.setViewportSize({ width: 320, height: 560 });
+  expect(await win.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await answer(h, 'Deny');
+  expect((await result(h, id)).code).toBe('user_denied');
+});
 
 test('站点授权：仅本次对话；同一对话不再问，别的对话还要问', async () => {
   h = await launch();
@@ -223,8 +310,9 @@ test('下载：允许后存成交付文件、不进下载目录；拒绝回 down
   const id = await send(h, 'click', { element: 'Get the report', ref: refOf(snap, 'Get the report') });
   const win = await approvalWindow(h);
   expect(await win.locator('#detail').textContent()).toContain('report-2026.txt');
-  // 文件那一行带「文件」标签，和上传、密码框的「字段」一样，不是光一个冒号。
-  expect(await win.locator('#detail strong').textContent()).toBe('File：');
+  // 文件区仍有可见标题，并能按无障碍名称识别，文件名与大小清楚分行。
+  await expect(win.locator('#detail').getByRole('heading', { name: 'File', exact: true })).toBeVisible({ timeout: 2000 });
+  await expect(win.getByRole('list', { name: 'File', exact: true })).toContainText('26 B · text/plain');
   await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');

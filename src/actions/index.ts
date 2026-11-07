@@ -107,8 +107,10 @@ async function executeRequest(services: Services, request: RequestFrame, signal:
     return result;
   } catch (err) {
     const e = ctx.signal.aborted ? abortError(ctx.signal) : toActionError(err);
-    const page = await currentPage(services, request.conversation);
-    if (ctx.signal.aborted && e.code === 'timeout') {
+    // 已取消时不再等页面调试命令；它可能正是需要断开附着才能解除的挂起命令。
+    const page = ctx.signal.aborted ? undefined : await currentPage(services, request.conversation);
+    const turnEnded = (ctx.signal.reason as { turnEnded?: boolean } | undefined)?.turnEnded === true;
+    if (ctx.signal.aborted && e.code === 'timeout' && !turnEnded) {
       // 动作超时或被取消时，调试会话里可能还挂着一条不返回的命令（如冻结页面上的输入事件），
       // 后面同类命令会排在它后面：断开这一页的附着，下一次动作重新附着、换一个新会话。
       const tabId = await services.tabs.active(request.conversation).catch(() => null);
