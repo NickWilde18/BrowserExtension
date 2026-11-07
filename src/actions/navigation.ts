@@ -27,7 +27,7 @@ export async function open(ctx: ActionContext, a: OpenArgs): Promise<ActionOutpu
 
   let tabId = await ctx.services.tabs.active(ctx.conversation);
   if (a.newTab || tabId === null) {
-    tabId = await ctx.services.tabs.createTab(ctx.conversation);
+    tabId = await ctx.services.tabs.createTab(ctx.conversation, ctx.signal);
   }
 
   const s = await ctx.attach(tabId);
@@ -102,7 +102,7 @@ export async function tabs(ctx: ActionContext, a: TabsArgs): Promise<ActionOutpu
         }
       }
 
-      const tabId = await ctx.services.tabs.createTab(ctx.conversation);
+      const tabId = await ctx.services.tabs.createTab(ctx.conversation, ctx.signal);
       const s = await ctx.attach(tabId);
       if (url) {
         await navigateTo(ctx, s, url);

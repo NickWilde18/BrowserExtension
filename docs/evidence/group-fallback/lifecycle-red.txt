@@ -1,0 +1,69 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/tab-lifecycle.test.ts (4 tests | 4 failed) 163ms
+     × 取消落在写存储期间，立即移除临时登记，写完也不恢复 58ms
+     × removed 早于 create 回调时不登记失效 ID 52ms
+     × replaced 早于 create 回调时不登记失效 ID 52ms
+     × 分组成功、命名失败、解组失败时仍保留拖出撤权 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/tab-lifecycle.test.ts > 创建登记的异步交错 > 取消落在写存储期间，立即移除临时登记，写完也不恢复
+AssertionError: expected 'resolved' to be 'rejected' // Object.is equality
+
+Expected: "rejected"
+Received: "resolved"
+
+ ❯ test/unit/tab-lifecycle.test.ts:30:27
+     28|     ctrl.abort();
+     29|     complete();
+     30|     expect(await outcome).toBe('rejected');
+       |                           ^
+     31|     expect(await reg.list('A')).toEqual([]);
+     32|     expect(await new TabRegistry(kv, browser).list('A')).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/unit/tab-lifecycle.test.ts > 创建登记的异步交错 > removed 早于 create 回调时不登记失效 ID
+ FAIL  test/unit/tab-lifecycle.test.ts > 创建登记的异步交错 > replaced 早于 create 回调时不登记失效 ID
+AssertionError: expected 'resolved' to be 'rejected' // Object.is equality
+
+Expected: "rejected"
+Received: "resolved"
+
+ ❯ test/unit/tab-lifecycle.test.ts:48:27
+     46|     else await reg.onTabReplaced(20, 10);
+     47|     complete({ tabId: 10, windowId: 1 });
+     48|     expect(await outcome).toBe('rejected');
+       |                           ^
+     49|     expect(await reg.list('A')).toEqual([]);
+     50|     if (event === 'replaced') expect(browser.close).toHaveBeenCalledWi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/unit/tab-lifecycle.test.ts > 创建登记的异步交错 > 分组成功、命名失败、解组失败时仍保留拖出撤权
+AssertionError: expected null to be 'A' // Object.is equality
+
+- Expected:
+"A"
+
++ Received:
+null
+
+ ❯ test/unit/tab-lifecycle.test.ts:59:50
+     57|     const reg = new TabRegistry(new MemoryKV(), browser);
+     58|     const tab = await reg.createTab('A');
+     59|     expect(await reg.onTabGroupChanged(tab, -1)).toBe('A');
+       |                                                  ^
+     60|     expect(await reg.isAccessible('A', tab)).toBe(false);
+     61|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  04:45:19
+   Duration  527ms (transform 229ms, setup 0ms, import 248ms, tests 163ms, environment 0ms)
+

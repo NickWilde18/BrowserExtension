@@ -1,10 +1,24 @@
 // 对话 ↔ AI 标签的登记（计划 4.5「AI 能碰的标签页」）。
 //
-// AI 只碰两类标签：它自己开的、放在本对话 AI 标签组里的；用户在弹窗里点了「共享此页」的。
-// 用户把标签拖出 AI 标签组，AI 就碰不到了；用户拖进组里的标签不算（没有点共享）。
+// AI 只碰两类标签：它为本对话自己开的；用户在弹窗里点了「共享此页」的。
+// 可用时使用原生 AI 组，拖出即撤权；不可用时按登记管理普通标签，关闭即移除。
+// 用户拖进组里的标签不算（没有点共享）。
 // 登记存在 storage.session（后台被回收后再起来还在），浏览器关掉就没了。
 
 import type { KV } from '../storage';
+import { abortError } from '../actions/context';
+
+/** 分组只是展示能力，创建与命名共用此等待预算。每次创建重新尝试，不缓存浏览器能力。 */
+const GROUP_WAIT_MS = 1000;
+
+function abortable<T>(job: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(abortError(signal));
+    job.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener('abort', abort, { once: true });
+  });
+}
 
 const KEY = 'tabs.conversations';
 const LAST_KEY = 'tabs.lastConversation';
@@ -16,6 +30,8 @@ export type ShareTarget = { kind: 'next' } | { kind: 'recent'; title: string };
 
 export interface ConversationTabs {
   groupId: number | null;
+  /** 同一对话可以同时有原生组标签与回退的普通标签；旧登记缺省为空。 */
+  ungrouped?: number[];
   windowId: number | null;
   /** AI 自己开的标签（按打开顺序）。 */
   tabs: number[];
@@ -115,6 +131,29 @@ export const chromeTabOps: TabOps = {
 
 export class TabRegistry {
   private cache: Record<string, ConversationTabs> | null = null;
+  private readonly creating = new Set<{
+    conversation: string; ctrl: AbortController; tabId?: number; groupId?: number;
+    lost: Map<number, number | null>; groups: Map<number, number>;
+  }>();
+  private saving: Promise<void> = Promise.resolve();
+  /** 原生 group 可能晚于普通页登记结束；跟随该新页替换，关闭时失效。 */
+  private readonly groupingTabs = new Set<{ tabId: number | null }>();
+
+  private cancelCreating(conversation?: string): void {
+    for (const pending of this.creating) {
+      if (conversation === undefined || pending.conversation === conversation) pending.ctrl.abort();
+    }
+  }
+
+  private async ungroup(tabId: number): Promise<void> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), GROUP_WAIT_MS);
+    try {
+      await abortable(Promise.resolve().then(() => this.ops.ungroup(tabId)), ctrl.signal).catch(() => undefined);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   constructor(private readonly kv: KV, private readonly ops: TabOps = chromeTabOps,
     private readonly groupTitle: (conversation: string) => string = (c) => `AI · ${c.slice(0, 4)}`) {}
@@ -168,24 +207,100 @@ export class TabRegistry {
     return null;
   }
 
-  /** 新开一个 AI 标签（about:blank），放进本对话的 AI 标签组，设为当前。 */
-  async createTab(conversation: string): Promise<number> {
-    const all = await this.all();
-    const c = all[conversation] ?? this.blank();
-    const { tabId, windowId } = await this.ops.create(c.windowId);
-    const groupId = await this.ops.group(tabId, c.groupId, windowId);
-    if (groupId !== c.groupId) {
-      await this.ops.titleGroup(groupId, this.groupTitle(conversation));
+  /** 新开 AI 标签；原生分组不可用时按同一对话登记普通标签，不阻塞导航。 */
+  async createTab(conversation: string, signal?: AbortSignal): Promise<number> {
+    const pending = {
+      conversation, ctrl: new AbortController(), tabId: undefined as number | undefined,
+      groupId: undefined as number | undefined,
+      lost: new Map<number, number | null>(), groups: new Map<number, number>(),
+    };
+    this.creating.add(pending);
+    const canceled = signal ? AbortSignal.any([signal, pending.ctrl.signal]) : pending.ctrl.signal;
+    let cancelCreated: (() => void) | undefined;
+    try {
+      if (canceled.aborted) throw abortError(canceled);
+      const all = await this.all();
+      const c = all[conversation] ?? this.blank();
+      if (canceled.aborted) throw abortError(canceled);
+      const creation = this.ops.create(c.windowId);
+      // tabs.create 本身无法取消。迟到的新页只能清理，不能交给后续请求。
+      void creation.then(({ tabId }) => {
+        if (canceled.aborted) void this.ops.close(tabId).catch(() => undefined);
+      }, () => undefined);
+      const { tabId, windowId } = await abortable(creation, canceled);
+      pending.tabId = tabId;
+      let registered = false;
+      cancelCreated = () => {
+        // 同步撤回临时登记，后续请求不会先借用这个正在取消的标签。
+        if (registered) {
+          this.removeTab(c, tabId);
+          void this.save().catch(() => undefined);
+        }
+        void this.ops.close(tabId).catch(() => undefined);
+      };
+      canceled.addEventListener('abort', cancelCreated, { once: true });
+      if (pending.lost.has(tabId)) {
+        const replacement = pending.lost.get(tabId);
+        if (replacement != null) void this.ops.close(replacement).catch(() => undefined);
+        pending.ctrl.abort();
+      }
+      if (canceled.aborted) {
+        cancelCreated();
+        throw abortError(canceled);
+      }
+      let groupId: number | null = null;
+      let abandoned = false;
+      const groupingTab = { tabId: tabId as number | null };
+      this.groupingTabs.add(groupingTab);
+      const grouping = Promise.resolve().then(() => this.ops.group(tabId, c.groupId, windowId));
+      void grouping.then(() => {
+        // 只解散这次创建的标签，不按 groupId 解散整个组，也不重写任何登记。
+        if ((abandoned || canceled.aborted) && groupingTab.tabId !== null) void this.ungroup(groupingTab.tabId);
+      }, () => undefined).finally(() => this.groupingTabs.delete(groupingTab));
+      const timeout = new AbortController();
+      const timer = setTimeout(() => timeout.abort(), GROUP_WAIT_MS);
+      const budget = AbortSignal.any([canceled, timeout.signal]);
+      try {
+        groupId = await abortable(grouping, budget);
+        pending.groupId = groupId;
+        const observed = pending.groups.get(tabId);
+        if (observed !== undefined && observed !== groupId) pending.ctrl.abort();
+        if (groupId !== c.groupId && !canceled.aborted) {
+          // 分组已经生效。命名失败只放弃名称，不能误标为普通页而绕过拖出撤权。
+          await abortable(Promise.resolve().then(() => this.ops.titleGroup(groupId!, this.groupTitle(conversation))), budget)
+            .catch(() => undefined);
+        }
+      } catch {
+        abandoned = true;
+        groupId = null;
+        void this.ungroup(tabId);
+      } finally {
+        clearTimeout(timer);
+      }
+      if (canceled.aborted) {
+        void this.ops.close(tabId).catch(() => undefined);
+        throw abortError(canceled);
+      }
+      // 其他对话并发创建不会互相覆盖；同一对话由调度器串行执行。
+      if (groupId !== null) c.groupId = groupId;
+      else (c.ungrouped ??= []).push(tabId);
+      c.windowId = windowId;
+      c.tabs.push(tabId);
+      c.active = tabId;
+      c.lastUsed = Date.now();
+      all[conversation] = c;
+      registered = true;
+      await this.save();
+      if (canceled.aborted) {
+        // 等待排在临时登记之后的撤回写入，避免后台重启重新读到已取消的页。
+        await this.save();
+        throw abortError(canceled);
+      }
+      return tabId;
+    } finally {
+      if (cancelCreated) canceled.removeEventListener('abort', cancelCreated);
+      this.creating.delete(pending);
     }
-
-    c.groupId = groupId;
-    c.windowId = windowId;
-    c.tabs.push(tabId);
-    c.active = tabId;
-    c.lastUsed = Date.now();
-    all[conversation] = c;
-    await this.save();
-    return tabId;
   }
 
   async setActive(conversation: string, tabId: number): Promise<void> {
@@ -221,6 +336,7 @@ export class TabRegistry {
    * 共享页只撤销共享。返回关掉的标签数；调用方负责断开附着。
    */
   async release(conversation: string, keepTabs: boolean): Promise<{ tabs: number[]; closed: number }> {
+    this.cancelCreating(conversation);
     const all = await this.all();
     const c = all[conversation];
     if (!c) {
@@ -236,7 +352,7 @@ export class TabRegistry {
     let closed = 0;
     for (const tabId of c.tabs) {
       if (keepTabs) {
-        await this.ops.ungroup(tabId);
+        await this.ungroup(tabId);
       } else {
         await this.ops.close(tabId);
         closed++;
@@ -321,6 +437,7 @@ export class TabRegistry {
    * 它们的附着）。
    */
   async forgetAll(): Promise<number[]> {
+    this.cancelCreating();
     const conversations = Object.values(await this.all());
     // 先清登记再解散组：解散触发的 onUpdated(groupId) 不会被当成「拖出 AI 组」。
     this.cache = {};
@@ -331,7 +448,7 @@ export class TabRegistry {
 
     for (const c of conversations) {
       for (const tabId of c.tabs) {
-        await this.ops.ungroup(tabId);
+        await this.ungroup(tabId);
       }
     }
 
@@ -340,6 +457,16 @@ export class TabRegistry {
 
   /** 标签关掉了。 */
   async onTabRemoved(tabId: number): Promise<void> {
+    for (const grouping of this.groupingTabs) {
+      if (grouping.tabId === tabId) {
+        grouping.tabId = null;
+        this.groupingTabs.delete(grouping);
+      }
+    }
+    for (const pending of this.creating) {
+      if (pending.tabId === undefined) pending.lost.set(tabId, null);
+      if (pending.tabId === tabId) pending.ctrl.abort();
+    }
     const all = await this.all();
     let changed = false;
     for (const c of Object.values(all)) {
@@ -359,6 +486,16 @@ export class TabRegistry {
    * 换成新 id，对话照常用这个标签。
    */
   async onTabReplaced(added: number, removed: number): Promise<void> {
+    for (const grouping of this.groupingTabs) {
+      if (grouping.tabId === removed) grouping.tabId = added;
+    }
+    for (const pending of this.creating) {
+      if (pending.tabId === undefined) pending.lost.set(removed, added);
+      if (pending.tabId === removed) {
+        pending.ctrl.abort();
+        void this.ops.close(added).catch(() => undefined);
+      }
+    }
     const all = await this.all();
     let changed = false;
     for (const c of Object.values(all)) {
@@ -366,6 +503,7 @@ export class TabRegistry {
       if (c.tabs.includes(removed) || c.shared.includes(removed)) {
         c.tabs = swap(c.tabs);
         c.shared = swap(c.shared);
+        if (c.ungrouped) c.ungrouped = swap(c.ungrouped);
         changed = true;
       }
 
@@ -382,9 +520,13 @@ export class TabRegistry {
 
   /** 标签换了组：AI 开的标签被拖出本对话的 AI 标签组，AI 就不再碰它。返回失去它的对话。 */
   async onTabGroupChanged(tabId: number, groupId: number): Promise<string | null> {
+    for (const pending of this.creating) {
+      if (pending.tabId === undefined || pending.tabId === tabId) pending.groups.set(tabId, groupId);
+      if (pending.tabId === tabId && pending.groupId !== undefined && pending.groupId !== groupId) pending.ctrl.abort();
+    }
     const all = await this.all();
     for (const [id, c] of Object.entries(all)) {
-      if (c.tabs.includes(tabId) && c.groupId !== null && groupId !== c.groupId) {
+      if (c.tabs.includes(tabId) && !c.ungrouped?.includes(tabId) && c.groupId !== null && groupId !== c.groupId) {
         this.removeTab(c, tabId);
         await this.save();
         return id;
@@ -407,6 +549,7 @@ export class TabRegistry {
 
   private removeTab(c: ConversationTabs, tabId: number): void {
     c.tabs = c.tabs.filter((t) => t !== tabId);
+    if (c.ungrouped) c.ungrouped = c.ungrouped.filter((t) => t !== tabId);
     c.shared = c.shared.filter((t) => t !== tabId);
     if (c.active === tabId) {
       c.active = c.tabs.at(-1) ?? c.shared.at(-1) ?? null;
@@ -427,7 +570,10 @@ export class TabRegistry {
 
   private async save(): Promise<void> {
     if (this.cache) {
-      await this.kv.set(KEY, this.cache);
+      const snapshot = structuredClone(this.cache);
+      const write = this.saving.catch(() => undefined).then(() => this.kv.set(KEY, snapshot));
+      this.saving = write;
+      await write;
     }
   }
 }

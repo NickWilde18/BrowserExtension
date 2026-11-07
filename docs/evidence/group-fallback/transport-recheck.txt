@@ -1,0 +1,19 @@
+
+Running 14 tests using 1 worker
+
+  ✓   1 test/e2e/transport.spec.ts:85:1 › 没登录时连不上（401，等登录）；在平台网页登录后连上、收到 ready (203ms)
+  ✓   2 test/e2e/transport.spec.ts:100:1 › 执行一个动作，结果经 frames 交回 (167ms)
+  ✓   3 test/e2e/transport.spec.ts:106:1 › 上传：经 uploads 按令牌取文件内容 (826ms)
+  ✓   4 test/e2e/transport.spec.ts:118:1 › 上传：uploads 读到一半断了（字节数不到 Content-Length）：回 action_failed，不把截断的文件放进页面 (319ms)
+  ✓   5 test/e2e/transport.spec.ts:133:1 › 下载：内容经 files 送回 Chat，结果里是 Chat 给的 file_id (365ms)
+  ✓   6 test/e2e/transport.spec.ts:147:1 › rotate（连接到 5 分钟寿命）：立刻重连，不退避 (58ms)
+  ✓   7 test/e2e/transport.spec.ts:157:1 › 断线：按退避重连 (782ms)
+  ✓   8 test/e2e/transport.spec.ts:165:1 › 401：停住、提示重新登录；之后按退避重试，登录态还在就连上 (1.8s)
+  ✓   9 test/e2e/transport.spec.ts:176:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗 (349ms)
+  ✓  10 test/e2e/transport.spec.ts:202:1 › frames 回 413（结果超过 9 MiB，补充约定 3）：换成 action_failed 的错误结果再发一次 (56ms)
+  ✓  11 test/e2e/transport.spec.ts:208:1 › files 回 413：存 PDF 回 file_too_large；下载回 file_too_large，说明写明动作已经生效 (572ms)
+  ✓  12 test/e2e/transport.spec.ts:224:1 › stream 回 403（插件没在平台登记）：停住不重连，弹窗提示；点「重新连接」再连 (3.9s)
+  ✓  13 test/e2e/transport.spec.ts:243:1 › 换了平台账号（ready.account 变了，补充约定 4）：清掉上一个账号的对话状态、断开附着，AI 标签不关 (253ms)
+  ✓  14 test/e2e/transport.spec.ts:278:1 › 每个请求：只 POST 这四个路径、不带 X-Service、带插件的 Origin 和会话 Cookie（未登录那几次除外） (101ms)
+
+  14 passed (10.8s)

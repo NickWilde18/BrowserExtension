@@ -1,0 +1,39 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/tab-lifecycle.test.ts (5 tests | 1 failed | 4 skipped) 11ms
+     × 回退页已替换 ID 后，迟到分组清理新 ID，不碰旧 ID 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/tab-lifecycle.test.ts > 创建登记的异步交错 > 回退页已替换 ID 后，迟到分组清理新 ID，不碰旧 ID
+AssertionError: expected "vi.fn()" to be called with arguments: [ 20 ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+-   20,
++   10,
+  ]
+
+
+Number of calls: 1
+
+ ❯ test/unit/tab-lifecycle.test.ts:67:29
+     65|     complete(501);
+     66|     await vi.advanceTimersByTimeAsync(0);
+     67|     expect(browser.ungroup).toHaveBeenCalledWith(20);
+       |                             ^
+     68|     expect(browser.ungroup).not.toHaveBeenCalledWith(10);
+     69|     expect(await reg.list('A')).toEqual([20]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 4 skipped (5)
+   Start at  04:48:14
+   Duration  202ms (transform 66ms, setup 0ms, import 86ms, tests 11ms, environment 0ms)
+

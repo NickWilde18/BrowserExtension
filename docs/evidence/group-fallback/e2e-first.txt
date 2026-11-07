@@ -1,0 +1,150 @@
+
+Running 76 tests using 1 worker
+
+  ✓   1 test/e2e/actions.spec.ts:24:1 › navigate：后退、前进、刷新 (982ms)
+  ✓   2 test/e2e/actions.spec.ts:42:1 › tabs：list、new、select、close；close 关掉 AI 开的标签 (770ms)
+  ✓   3 test/e2e/actions.spec.ts:67:1 › close keep_tabs：只断开附着、标签留下 (492ms)
+  ✓   4 test/e2e/actions.spec.ts:74:1 › 不同对话各开各的标签组 (669ms)
+  ✓   5 test/e2e/actions.spec.ts:85:1 › find：按文字与正则找元素 (608ms)
+  ✓   6 test/e2e/actions.spec.ts:102:1 › click / hover / type / select / fill_form (5.4s)
+  ✓   7 test/e2e/actions.spec.ts:150:1 › stale ref 回 element_not_found (686ms)
+  ✓   8 test/e2e/actions.spec.ts:159:1 › hover 触发悬停；坐标点击 (1.1s)
+  ✓   9 test/e2e/actions.spec.ts:173:1 › press_key：单键与组合键 (2.7s)
+  ✓  10 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (810ms)
+  ✓  11 test/e2e/actions.spec.ts:201:1 › drag：HTML5 拖放 (1.2s)
+  ✓  12 test/e2e/actions.spec.ts:213:1 › dialog：alert / confirm / prompt (3.3s)
+  ✓  13 test/e2e/actions.spec.ts:243:1 › wait：等文字出现、等文字消失、等几秒 (3.4s)
+  ✓  14 test/e2e/actions.spec.ts:257:1 › console 与 network：级别过滤、凭据头去掉、按编号看正文 (1.2s)
+  ✓  15 test/e2e/actions.spec.ts:292:1 › screenshot：视口、整页、元素；尺寸按 CSS 像素 (725ms)
+  ✓  16 test/e2e/actions.spec.ts:307:1 › pdf：存成交付文件 (604ms)
+  ✓  17 test/e2e/actions.spec.ts:318:1 › iframe：同源与跨源子框架进快照，编号带前缀，能点 (2.6s)
+  -  18 test/e2e/actions.spec.ts:341:1 › 后台标签被浏览器丢弃（换了 id）后照常可用：重新加载、重新附着
+  ✓  19 test/e2e/actions.spec.ts:365:1 › 网址范围：javascript:、data:、file:// 不开 (525ms)
+  ✓  20 test/e2e/approvals.spec.ts:29:1 › 确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝 (496ms)
+  ✓  21 test/e2e/approvals.spec.ts:48:3 › 确认窗：button 关闭只拒绝当前动作，不全局停止浏览器 (716ms)
+  ✓  22 test/e2e/approvals.spec.ts:48:3 › 确认窗：Escape 关闭只拒绝当前动作，不全局停止浏览器 (675ms)
+  ✓  23 test/e2e/approvals.spec.ts:68:1 › 确认窗：短内容收紧窗口，长脚本可滚动阅读且按钮始终可达 (879ms)
+  ✓  24 test/e2e/approvals.spec.ts:94:1 › 确认窗：浅深主题均有明确底色与可读文字，窄窗口不横向溢出 (523ms)
+  ✓  25 test/e2e/approvals.spec.ts:116:1 › 站点授权：仅本次对话；同一对话不再问，别的对话还要问 (796ms)
+  ✓  26 test/e2e/approvals.spec.ts:140:1 › 站点授权：总是允许，换对话也不问；弹窗里能撤销 (831ms)
+  ✓  27 test/e2e/approvals.spec.ts:159:1 › 站点授权：拒绝不开标签；超时按拒绝 (2.0s)
+  ✓  28 test/e2e/approvals.spec.ts:175:1 › 跨站跳转：点链接去没授权的站点先问，拒绝就不跳 (939ms)
+  ✓  29 test/e2e/approvals.spec.ts:199:1 › 跨站跳转：同站链接重定向到别的站点也拦 (716ms)
+  ✓  30 test/e2e/approvals.spec.ts:215:1 › 密码框：允许 / 我自己输入 / 拒绝 (1.6s)
+  ✓  31 test/e2e/approvals.spec.ts:259:1 › 上传：可见的文件框、藏在按钮后面的文件框；拒绝不放文件 (2.7s)
+  ✓  32 test/e2e/approvals.spec.ts:304:1 › 下载：允许后存成交付文件、不进下载目录；拒绝回 download_denied (1.2s)
+  ✓  33 test/e2e/approvals.spec.ts:334:1 › 下载：<a download>（页面里重新取）、跨源的文件地址与表单 POST 导出（响应阶段截下） (2.3s)
+  ✓  34 test/e2e/approvals.spec.ts:366:1 › 脚本：每次确认，显示全文；允许后在页面主世界执行，可带元素 (2.5s)
+  ✓  35 test/e2e/approvals.spec.ts:395:1 › Auto Mode：审查放行就不弹小窗 (487ms)
+  ✓  36 test/e2e/approvals.spec.ts:406:1 › Auto Mode：审查拦下时小窗显示理由，由用户定 (583ms)
+  ✓  37 test/e2e/approvals.spec.ts:416:1 › Auto Mode：开关关掉不发审批请求，直接问用户 (578ms)
+  ✓  38 test/e2e/approvals.spec.ts:425:1 › Auto Mode：Chat 迟迟不回审批，15 秒后回到小窗 (15.6s)
+  ✓  39 test/e2e/approvals.spec.ts:436:1 › 叫停：弹窗「停止」后请求回 user_stopped，「恢复」后照常 (555ms)
+  ✓  40 test/e2e/cookie-origin.spec.ts:10:1 › 带端口的平台也能监听会话 Cookie 变化 (376ms)
+  ✓  41 test/e2e/newtab.spec.ts:37:3 › 新开标签（target=_blank 的链接）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (1.2s)
+  ✓  42 test/e2e/newtab.spec.ts:37:3 › 新开标签（点击触发 window.open）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (1.2s)
+  ✓  43 test/e2e/newtab.spec.ts:37:3 › 新开标签（target=_blank 的表单）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (1.2s)
+  ✓  44 test/e2e/newtab.spec.ts:56:1 › 新开标签：允许后在本 AI 标签里打开，之后照常能操作 (986ms)
+  ✓  45 test/e2e/newtab.spec.ts:80:1 › 动作之外：用户自己在 AI 标签里点新开标签的链接照常打开新标签，插件不附着它 (577ms)
+  ✓  46 test/e2e/newtab.spec.ts:93:1 › 动作结束之后 AI 标签里触发的下载：取消、不落进下载目录，下一个结果里告诉模型 (4.1s)
+  ✓  47 test/e2e/newtab.spec.ts:112:1 › 用户允许了下载但取不回内容（一次性链接）：结果仍是 ok，payload.download_failed=true，message 写原因 (1.1s)
+  ✓  48 test/e2e/newtab.spec.ts:126:1 › 用户自己在 AI 标签之外的下载照常 (640ms)
+  ✓  49 test/e2e/popup.spec.ts:27:1 › 还没有对话用过浏览器：将共享给下一个使用浏览器的对话 (398ms)
+  ✓  50 test/e2e/popup.spec.ts:31:1 › 最近用过浏览器的对话有标题：将共享给：<标题>，标题当纯文本 (534ms)
+  ✓  51 test/e2e/popup.spec.ts:42:1 › 最近用过浏览器的对话标题为空：将共享给最近使用浏览器的对话 (440ms)
+- generic [active] [ref=e1]:
+  - heading "Sign up" [level=1] [ref=e2]
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - text: Name
+      - textbox "Name" [ref=e5]
+    - generic [ref=e6]:
+      - text: Password
+      - textbox "Password" [ref=e7]
+    - generic [ref=e8]:
+      - text: Bio
+      - textbox "Bio" [ref=e9]
+    - generic [ref=e10]:
+      - text: Color
+      - combobox "Color" [ref=e11]:
+        - option "Red" [selected]
+        - option "Green"
+        - option "Blue"
+    - generic [ref=e12]:
+      - text: Fruits
+      - listbox "Fruits" [ref=e13]:
+        - option "Apple" [ref=e14]
+        - option "Pear" [ref=e15]
+        - option "Plum" [ref=e16]
+    - generic [ref=e17]:
+      - checkbox "I agree" [ref=e18]
+      - text: I agree
+    - generic [ref=e19]:
+      - radio "Small" [ref=e20]
+      - text: Small
+    - generic [ref=e21]:
+      - radio "Large" [ref=e22]
+      - text: Large
+    - generic [ref=e23]:
+      - text: Level
+      - slider "Level" [ref=e24]: "2"
+    - generic [ref=e25]:
+      - text: Day
+      - textbox "Day" [ref=e26]
+    - generic "Note" [ref=e27]: old note
+    - button "Submit" [ref=e28]
+  - paragraph
+  ✓  52 test/e2e/smoke.spec.ts:5:1 › open 之后 read 出带编号的快照 (529ms)
+  ✓  53 test/e2e/tab-fallback.spec.ts:31:3 › missing：open、read、tabs new、关闭与会话隔离仍可用 (772ms)
+  ✓  54 test/e2e/tab-fallback.spec.ts:31:3 › reject：open、read、tabs new、关闭与会话隔离仍可用 (761ms)
+  ✓  55 test/e2e/tab-fallback.spec.ts:31:3 › hang：open、read、tabs new、关闭与会话隔离仍可用 (2.8s)
+  ✓  56 test/e2e/tab-fallback.spec.ts:31:3 › title：open、read、tabs new、关闭与会话隔离仍可用 (2.8s)
+  ✓  57 test/e2e/tab-fallback.spec.ts:49:1 › 迟到的真实原生分组被按标签解散，不撤销回退页，不污染另一对话 (1.6s)
+  ✓  58 test/e2e/tab-fallback.spec.ts:62:1 › 动作超时早于分组预算时清理新页，迟到分组不再导航 (551ms)
+  ✓  59 test/e2e/tab-fallback.spec.ts:72:1 › 分组中取消请求关闭新页，随后请求可正常执行 (1.6s)
+  ✓  60 test/e2e/transport.spec.ts:85:1 › 没登录时连不上（401，等登录）；在平台网页登录后连上、收到 ready (175ms)
+  ✓  61 test/e2e/transport.spec.ts:100:1 › 执行一个动作，结果经 frames 交回 (161ms)
+  ✘  62 test/e2e/transport.spec.ts:106:1 › 上传：经 uploads 按令牌取文件内容 (313ms)
+  -  63 test/e2e/transport.spec.ts:118:1 › 上传：uploads 读到一半断了（字节数不到 Content-Length）：回 action_failed，不把截断的文件放进页面
+  -  64 test/e2e/transport.spec.ts:133:1 › 下载：内容经 files 送回 Chat，结果里是 Chat 给的 file_id
+  -  65 test/e2e/transport.spec.ts:147:1 › rotate（连接到 5 分钟寿命）：立刻重连，不退避
+  -  66 test/e2e/transport.spec.ts:157:1 › 断线：按退避重连
+  -  67 test/e2e/transport.spec.ts:165:1 › 401：停住、提示重新登录；之后按退避重试，登录态还在就连上
+  -  68 test/e2e/transport.spec.ts:176:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗
+  -  69 test/e2e/transport.spec.ts:202:1 › frames 回 413（结果超过 9 MiB，补充约定 3）：换成 action_failed 的错误结果再发一次
+  -  70 test/e2e/transport.spec.ts:208:1 › files 回 413：存 PDF 回 file_too_large；下载回 file_too_large，说明写明动作已经生效
+  -  71 test/e2e/transport.spec.ts:224:1 › stream 回 403（插件没在平台登记）：停住不重连，弹窗提示；点「重新连接」再连
+  -  72 test/e2e/transport.spec.ts:243:1 › 换了平台账号（ready.account 变了，补充约定 4）：清掉上一个账号的对话状态、断开附着，AI 标签不关
+  -  73 test/e2e/transport.spec.ts:278:1 › 每个请求：只 POST 这四个路径、不带 X-Service、带插件的 Origin 和会话 Cookie（未登录那几次除外）
+  ✓  74 test/e2e/turn-release.spec.ts:43:1 › 回答结束释放本轮所有标签，保留网页与另一对话的附着 (822ms)
+  ✓  75 test/e2e/turn-release.spec.ts:61:1 › 迟到的旧回合释放不打断新回合，结束后旧请求不再执行 (573ms)
+  ✓  76 test/e2e/turn-release.spec.ts:78:1 › 停止回合取消等待中的确认，保留连接并允许下一轮 (656ms)
+
+
+  1) test/e2e/transport.spec.ts:106:1 › 上传：经 uploads 按令牌取文件内容 ──────────────────────────────────────
+
+    Error: {"type":"result","request_id":"00000000-0000-4000-c000-000000000004","outcome":"error","code":"action_failed","message":"The files could not be fetched because the browser is not connected.","page":{"url":"http://127.0.0.1:18961/upload.html","title":"Upload","origin":"http://127.0.0.1:18961"}}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "ok"
+    Received: "error"
+
+      111 |   await answer(harness(), 'Allow');
+      112 |   const r = await result(id);
+    > 113 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+          |                                        ^
+      114 |   const page = ctx.pages().find((p) => p.url().includes('/upload.html'));
+      115 |   await expect.poll(() => page?.locator('#out').textContent()).toContain('visible:note.txt:12:text/plain');
+      116 | });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/transport.spec.ts:113:40
+
+    Error Context: test-results/transport-上传：经-uploads-按令牌取文件内容/error-context.md
+
+    Error Context: test-results/transport-上传：经-uploads-按令牌取文件内容/error-context.md
+
+  1 failed
+    test/e2e/transport.spec.ts:106:1 › 上传：经 uploads 按令牌取文件内容 ───────────────────────────────────────
+  1 skipped
+  11 did not run
+  63 passed (1.6m)
