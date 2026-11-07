@@ -62,6 +62,17 @@
       <ul id="sites"></ul>
       <p id="sitesNone" class="hint" data-i18n="sitesNone"></p>
     </section>
+
+    <details id="advanced" class="advanced">
+      <summary data-i18n="advancedSettings"></summary>
+      <label for="serverOrigin" data-i18n="serverOriginLabel"></label>
+      <input id="serverOrigin" type="url" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="serverOriginHint serverSwitchHint serverPermissionHint serverError">
+      <p id="serverOriginHint" class="hint" data-i18n="serverOriginHint"></p>
+      <p id="serverSwitchHint" class="hint" data-i18n="serverSwitchHint"></p>
+      <p id="serverPermissionHint" class="hint" data-i18n="serverPermissionHint" hidden></p>
+      <button id="saveServer" type="button" data-i18n="saveServer" disabled></button>
+      <p id="serverError" class="hint" role="status" aria-live="polite" hidden></p>
+    </details>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

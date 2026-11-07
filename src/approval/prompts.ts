@@ -95,6 +95,9 @@ export class PromptManager {
 
     try {
       entry.windowId = await this.windows.open(this.windows.pageUrl(id));
+      if (!this.open.has(id) || entry.signal.aborted) {
+        await this.windows.close(entry.windowId);
+      }
     } catch {
       this.finish(id, 'closed');
     }
@@ -128,6 +131,18 @@ export class PromptManager {
         await this.windows.close(entry.windowId);
       }
     }
+  }
+
+  /** 运行期结束时关闭全部确认；迟到的 windows.open 由 ask 的存活检查清理。 */
+  async closeAll(): Promise<void> {
+    const ids = [...this.open.keys()];
+    await Promise.all(ids.map(async (id) => {
+      const entry = this.open.get(id);
+      if (entry?.resolve) {
+        entry.resolve('aborted');
+      }
+      await this.dismiss(id);
+    }));
   }
 
   /** 小窗页面取要显示的内容。windowId 是发消息的那个页面所在的窗口：只给它自己那一个。 */

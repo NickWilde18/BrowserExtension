@@ -1,0 +1,10 @@
+$ vitest run
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+
+ Test Files  13 passed (13)
+      Tests  130 passed (130)
+   Start at  13:54:32
+   Duration  970ms (transform 3.09s, setup 0ms, import 4.11s, tests 994ms, environment 1ms)
+

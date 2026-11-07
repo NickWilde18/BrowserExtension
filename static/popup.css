@@ -94,3 +94,37 @@ section {
   color: GrayText;
   font-size: 11px;
 }
+
+.advanced {
+  border-top: 1px solid GrayText;
+  margin-top: 12px;
+  padding-top: 8px;
+}
+
+.advanced summary {
+  cursor: pointer;
+}
+
+.advanced label {
+  display: block;
+  margin-top: 8px;
+}
+
+#serverOrigin {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+#saveServer {
+  margin-top: 8px;
+  max-width: 100%;
+  white-space: normal;
+}
+
+#serverError {
+  overflow-wrap: anywhere;
+}
+
+#serverError[data-error="true"] {
+  color: #c0392b;
+}

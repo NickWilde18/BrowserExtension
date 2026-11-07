@@ -47,5 +47,7 @@ export function buildManifest({ version, platformOrigin, key }) {
     },
     permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies'],
     host_permissions: [hostPermission],
+    // 只在用户明确保存平台来源或开启网页控制条时申请对应来源，不在安装时授予全站。
+    optional_host_permissions: ['http://*/*', 'https://*/*'],
   };
 }

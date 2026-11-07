@@ -1,0 +1,10 @@
+
+Running 5 tests using 1 worker
+
+  ✓  1 test/e2e/popup.spec.ts:27:1 › 还没有对话用过浏览器：将共享给下一个使用浏览器的对话 (483ms)
+  ✓  2 test/e2e/popup.spec.ts:31:1 › 最近用过浏览器的对话有标题：将共享给：<标题>，标题当纯文本 (521ms)
+  ✓  3 test/e2e/popup.spec.ts:42:1 › 最近用过浏览器的对话标题为空：将共享给最近使用浏览器的对话 (441ms)
+  ✓  4 test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 (558ms)
+  ✓  5 test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 (1.2s)
+
+  5 passed (3.9s)

@@ -66,6 +66,11 @@ export class ApprovalRegistry {
     this.settle(approvalId, { decision: 'ask_user' });
   }
 
+  /** 服务器运行期结束，不允许它的迟到审批影响新的连接。 */
+  clear(): void {
+    for (const id of this.pending.keys()) this.abandon(id);
+  }
+
   private settle(approvalId: string, verdict: ApprovalVerdict): void {
     const p = this.pending.get(approvalId);
     if (!p) {

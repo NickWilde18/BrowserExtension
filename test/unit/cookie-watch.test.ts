@@ -74,6 +74,23 @@ describe('watchSessionCookie', () => {
     expect(onSessionCookieChanged).not.toHaveBeenCalled();
   });
 
+  it('换服务器后按新主机过滤，并丢弃旧主机排队中的 Cookie 回调', async () => {
+    let host = HOST;
+    let fire!: (info: CookieChangeInfo) => void;
+    const reconnect = vi.fn();
+    watchSessionCookie({ platformHost: () => host, addListener: (fn) => { fire = fn; }, onSessionCookieChanged: reconnect });
+    const touched = new Set<string>();
+    fire(change(HOST, true, false, touched));
+    host = 'new.example.edu';
+    await vi.advanceTimersByTimeAsync(COOKIE_CHANGE_DEBOUNCE_MS);
+    expect(reconnect).not.toHaveBeenCalled();
+    fire(change(HOST, true, false, touched));
+    fire(change(host, true, false, touched));
+    await vi.advanceTimersByTimeAsync(COOKIE_CHANGE_DEBOUNCE_MS);
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    expect([...touched].sort()).toEqual(['domain', 'httpOnly']);
+  });
+
   it('不读 Cookie 的值：事件里只碰域和 HttpOnly 两个字段', async () => {
     const { fire } = setup();
     const touched = new Set<string>();

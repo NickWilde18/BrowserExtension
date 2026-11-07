@@ -18,7 +18,7 @@ export interface CookieChangeInfo {
 
 export interface CookieWatchDeps {
   /** 平台对外地址的主机名。 */
-  platformHost: string;
+  platformHost: string | (() => string);
   /** 注册 chrome.cookies.onChanged 的监听；要在后台脚本的顶层调，休眠的后台才会被这个事件唤醒。 */
   addListener(listener: (info: CookieChangeInfo) => void): void;
   /** 平台的会话 Cookie 变了。 */
@@ -29,10 +29,11 @@ export interface CookieWatchDeps {
 export const COOKIE_CHANGE_DEBOUNCE_MS = 500;
 
 export function watchSessionCookie(deps: CookieWatchDeps): void {
-  const host = deps.platformHost.toLowerCase();
+  const currentHost = () => (typeof deps.platformHost === 'function' ? deps.platformHost() : deps.platformHost).toLowerCase();
   let pending: ReturnType<typeof setTimeout> | null = null;
 
   deps.addListener((info) => {
+    const host = currentHost();
     if (!info.cookie.httpOnly || !isPlatformHost(info.cookie.domain, host)) {
       return;
     }
@@ -43,7 +44,7 @@ export function watchSessionCookie(deps: CookieWatchDeps): void {
 
     pending = setTimeout(() => {
       pending = null;
-      deps.onSessionCookieChanged();
+      if (currentHost() === host) deps.onSessionCookieChanged();
     }, COOKIE_CHANGE_DEBOUNCE_MS);
   });
 }

@@ -103,6 +103,7 @@ export class ConnectionManager {
   private watchdog: unknown = null;
   private keepAliveTimer: unknown = null;
   private started = false;
+  private disposed = false;
 
   constructor(private readonly deps: ManagerDeps) {
     this.timers = deps.timers ?? realTimers;
@@ -129,7 +130,7 @@ export class ConnectionManager {
   }
 
   start(): void {
-    if (this.started) {
+    if (this.started || this.disposed) {
       return;
     }
 
@@ -140,6 +141,7 @@ export class ConnectionManager {
 
   /** 弹窗「重新连接」：不等退避，立刻重连（也用于从 replaced / error 里恢复）。 */
   reconnectNow(): void {
+    if (this.disposed) return;
     this.started = true;
     this.teardown();
     this.clearRetry();
@@ -162,6 +164,16 @@ export class ConnectionManager {
     this.reconnectNow();
   }
 
+  /** 永久结束本服务器运行期；旧回调和旧重试不能重新建立连接。 */
+  dispose(): void {
+    this.disposed = true;
+    this.started = false;
+    this.teardown();
+    this.clearRetry();
+    this.stopKeepAlive();
+    this.setState({ state: 'offline' });
+  }
+
   /** 发一帧；没连上时抛 TransportError('not_connected')。 */
   async send(frame: OutboundFrame): Promise<void> {
     const t = this.transport;
@@ -173,6 +185,7 @@ export class ConnectionManager {
   }
 
   private async connect(): Promise<void> {
+    if (this.disposed) return;
     this.attempt++;
     this.setState({ state: 'connecting', account: this.stateValue.account });
 
@@ -207,6 +220,7 @@ export class ConnectionManager {
       return;
     }
 
+    if (this.current !== t || this.disposed) return;
     this.readyTimer = this.timers.setTimeout(() => {
       if (this.current === t && this.stateValue.state === 'connecting') {
         this.handleReason('ready_timeout');

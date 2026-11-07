@@ -65,6 +65,26 @@ describe('ConnectionManager', () => {
     expect(frames).toEqual([expect.objectContaining({ type: 'request', request_id: RID })]);
   });
 
+  it('dispose 清掉重试与保活，迟到帧和旧页面重连不能恢复已切走的服务器', async () => {
+    const { m, server, frames, keepAlives } = setup();
+    m.start();
+    await tick();
+    server.deliver(READY);
+    server.drop();
+    m.dispose();
+    const opens = server.opens;
+    const kept = keepAlives();
+    m.reconnectNow();
+    m.start();
+    server.deliver({ type: 'request', request_id: RID, action: 'read', args: {}, conversation: CONV, deadline_ms: 1, auth_wait_ms: 1 });
+    await tick(120000);
+    expect(server.opens).toBe(opens);
+    expect(keepAlives()).toBe(kept);
+    expect(frames).toEqual([]);
+    expect(m.status).toEqual({ state: 'offline' });
+    expect(m.transport).toBeNull();
+  });
+
   it('ready 超时、断线后按 1s 起翻倍退避重连，封顶 60s', async () => {
     const { m, server, statuses } = setup(0.999);
     m.start();

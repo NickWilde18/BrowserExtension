@@ -25,6 +25,122 @@ function applyI18n(): void {
 
 const RECONNECTABLE = new Set(['replaced', 'error', 'offline', 'waiting_login']);
 
+type ServerState = Pick<PopupState,
+  'serverOrigin' | 'serverEpoch' | 'serverSwitching' | 'serverPermissionGranted'>;
+let latestServerState: ServerState | null = null;
+let serverDraftDirty = false;
+let serverSaving = false;
+let serverFeedback: { key: string; error: boolean } | null = null;
+
+function normalizeServerOrigin(value: string): URL | null {
+  // 只接收来源地址；不默默剥掉路径或凭据，也不让 URL 的宽松解析接收反斜杠等输入。
+  const candidate = value.trim();
+  if (!/^https?:\/\/[^/?#\\\s@]+\/?$/i.test(candidate)) {
+    return null;
+  }
+
+  try {
+    const url = new URL(candidate);
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && url.hostname !== '' && url.username === ''
+      && url.pathname === '/' && url.search === '' && url.hash === '' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function updateServerSettings(): void {
+  if (!($('advanced') as HTMLDetailsElement).open) {
+    return;
+  }
+
+  const input = $('serverOrigin') as HTMLInputElement;
+  const snapshot = latestServerState;
+  if (snapshot && !serverDraftDirty && !serverSaving && document.activeElement !== input) {
+    input.value = snapshot.serverOrigin;
+  }
+
+  const switching = snapshot?.serverSwitching === true;
+  input.disabled = serverSaving || switching;
+  ($('saveServer') as HTMLButtonElement).disabled = !snapshot || serverSaving || switching;
+  $('serverPermissionHint').hidden = !snapshot || snapshot.serverPermissionGranted;
+  const feedback = serverSaving ? serverFeedback
+    : switching ? { key: 'serverSwitching', error: false } : serverFeedback;
+  const status = $('serverError');
+  status.hidden = !feedback;
+  status.textContent = feedback ? t(feedback.key) : '';
+  status.dataset.error = String(feedback?.error === true);
+  input.setAttribute('aria-invalid', String(feedback?.key === 'serverInvalidOrigin'));
+}
+
+function wireServerSettings(): void {
+  $('advanced').addEventListener('toggle', () => {
+    if (($('advanced') as HTMLDetailsElement).open) {
+      updateServerSettings();
+      void render();
+    }
+  });
+
+  $('serverOrigin').addEventListener('input', () => {
+    serverDraftDirty = true;
+    serverFeedback = null;
+    updateServerSettings();
+  });
+
+  $('saveServer').addEventListener('click', async () => {
+    if (serverSaving || latestServerState?.serverSwitching) {
+      return;
+    }
+
+    const input = $('serverOrigin') as HTMLInputElement;
+    const url = normalizeServerOrigin(input.value);
+    if (!url) {
+      serverFeedback = { key: 'serverInvalidOrigin', error: true };
+      updateServerSettings();
+      return;
+    }
+
+    // epoch 使用最近 render 的快照。权限请求前不能异步取 state，以免丢失用户手势。
+    const snapshot = latestServerState;
+    if (!snapshot) {
+      serverFeedback = { key: 'serverStateUnavailable', error: true };
+      updateServerSettings();
+      return;
+    }
+
+    serverSaving = true;
+    serverFeedback = { key: 'serverRequestingPermission', error: false };
+    updateServerSettings();
+    try {
+      const granted = await chrome.permissions.request({ origins: [`${url.protocol}//${url.hostname}/*`] });
+      if (!granted) {
+        serverFeedback = { key: 'serverPermissionDenied', error: true };
+        return;
+      }
+
+      serverFeedback = { key: 'serverSwitching', error: false };
+      updateServerSettings();
+      const result = await send<{ ok: boolean; error?: string }>({
+        type: 'popup:setServer', origin: url.origin, epoch: snapshot.serverEpoch,
+      });
+      if (result?.ok) {
+        serverDraftDirty = false;
+        input.value = url.origin;
+        serverFeedback = { key: 'serverSaved', error: false };
+      } else {
+        serverFeedback = { key: 'serverSaveFailed', error: true };
+      }
+    } catch {
+      // 不直接展示后台错误，避免把连接内部信息带到界面上。
+      serverFeedback = { key: 'serverSaveFailed', error: true };
+    } finally {
+      serverSaving = false;
+      updateServerSettings();
+      void render();
+    }
+  });
+}
+
 function siteItem(site: string, scope: string): HTMLLIElement {
   const li = document.createElement('li');
   const text = document.createElement('span');
@@ -52,6 +168,14 @@ async function render(): Promise<void> {
   if (!st) {
     return;
   }
+
+  latestServerState = {
+    serverOrigin: st.serverOrigin,
+    serverEpoch: st.serverEpoch,
+    serverSwitching: st.serverSwitching,
+    serverPermissionGranted: st.serverPermissionGranted,
+  };
+  updateServerSettings();
 
   // 插件没在平台登记（stream 上的 403）时停住不重试，提示和「稍后会重试」的 error 分开。
   const key = st.connection === 'error' && st.lastError === 'origin_not_allowed'
@@ -144,6 +268,7 @@ function wire(): void {
 
 applyI18n();
 wire();
+wireServerSettings();
 void render();
 setInterval(() => {
   void render();

@@ -76,15 +76,23 @@ async function discard(item: chrome.downloads.DownloadItem): Promise<void> {
 export class DownloadWatcher {
   private readonly armed = new Map<number, (d: DownloadSeen) => void>();
   private hints: Hint[] = [];
+  private disposed = false;
+  private readonly listener = (item: chrome.downloads.DownloadItem) => { void this.onCreated(item); };
 
   constructor(private readonly hooks: DownloadHooks) {
-    chrome.downloads.onCreated.addListener((item) => {
-      void this.onCreated(item);
-    });
+    chrome.downloads.onCreated.addListener(this.listener);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.armed.clear();
+    this.hints = [];
+    chrome.downloads.onCreated.removeListener(this.listener);
   }
 
   /** 动作开始时登记：这个标签页里出现的下载交给 onDownload。返回撤销登记。 */
   arm(tabId: number, onDownload: (d: DownloadSeen) => void): () => void {
+    if (this.disposed) return () => {};
     this.armed.set(tabId, onDownload);
     return () => {
       if (this.armed.get(tabId) === onDownload) {
@@ -95,6 +103,7 @@ export class DownloadWatcher {
 
   /** 附着的标签页报来 Page.downloadWillBegin。 */
   hint(tabId: number, url: string, suggestedFilename: string): void {
+    if (this.disposed) return;
     const now = Date.now();
     this.hints = this.hints.filter((h) => now - h.at < HINT_TTL_MS);
     this.hints.push({ tabId, url, suggestedFilename, at: now });
@@ -114,12 +123,13 @@ export class DownloadWatcher {
 
     const handler = this.armed.get(tabId);
     const owner = handler ? null : await this.hooks.ownedBy(tabId);
-    if (!handler && owner === null) {
+    if (this.disposed || (!handler && owner === null)) {
       // 附着着、但不是 AI 自己开的标签（用户共享进来的页面），动作之外的下载照常。
       return;
     }
 
     await discard(item);
+    if (this.disposed) return;
 
     const size = item.totalBytes > 0 ? item.totalBytes : item.fileSize > 0 ? item.fileSize : null;
     const filename = hint?.suggestedFilename || item.filename.split(/[\\/]/).pop() || nameFromUrl(item.finalUrl || item.url);

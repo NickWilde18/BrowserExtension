@@ -51,12 +51,17 @@ export interface PopupState {
   /** 「共享此页」会给谁：最近用过浏览器的对话（标题按纯文本显示），或下一个用浏览器的对话。 */
   shareTarget: ShareTarget;
   activeConversations: number;
+  serverOrigin: string;
+  serverEpoch: string;
+  serverSwitching: boolean;
+  serverPermissionGranted: boolean;
 }
 
 export type PageMessage =
   | { type: 'prompt:get'; id: string }
   | { type: 'prompt:answer'; id: string; answer: PromptAnswer }
   | { type: 'popup:state' }
+  | { type: 'popup:setServer'; origin: string; epoch: string }
   | { type: 'popup:setDisplayName'; name: string }
   | { type: 'popup:setAutoMode'; on: boolean }
   | { type: 'popup:stop' }
