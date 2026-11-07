@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 test/e2e/control-bar.spec.ts:7:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (1.7s)
+
+  1 passed (2.2s)

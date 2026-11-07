@@ -9,6 +9,7 @@ import { Identity } from './identity';
 import type { PageMessage, PopupState } from './messages';
 import { SiteStore } from './policy/sites';
 import { siteOf } from './policy/url';
+import { ControlBar } from './controlbar/controller';
 import { BrowserRuntime } from './runtime';
 import { localKV, sessionKV } from './storage';
 
@@ -26,21 +27,33 @@ declare const __FAKE_TRANSPORT__: boolean;
 const fakeServer = __FAKE_TRANSPORT__ ? new FakeServer() : null;
 const detachLog: Array<{ tabId: number | null; reason: string; at: number }> = [];
 
+let controlBar: ControlBar | null = null;
 const settings = new ServerSettings({
   local, defaultOrigin: PLATFORM_ORIGIN,
   hasPermission: (origin) => chrome.permissions.contains({ origins: [serverHostPermission(origin)] }),
-  create: (origin) => new BrowserRuntime({
-    origin, local, session, identity,
-    transport: (target) => __FAKE_TRANSPORT__ ? new FakeTransport(fakeServer as FakeServer) : new FetchTransport(target),
-    stopped: () => stopped,
-    onUserStop: () => { void stop(); },
-    detachLog: __TEST_HOOKS__ ? detachLog : undefined,
-  }),
+  create: (origin) => {
+    let bar: ControlBar;
+    const runtime = new BrowserRuntime({
+      origin, local, session, identity,
+      transport: (target) => __FAKE_TRANSPORT__ ? new FakeTransport(fakeServer as FakeServer) : new FetchTransport(target),
+      stopped: () => stopped,
+      onUserStop: () => { void stop(); },
+      onControlChanged: (conversation) => { void bar.refresh(conversation).catch(() => undefined); },
+      onAccountReset: () => bar.clear(),
+      onDispose: () => bar.dispose(),
+      detachLog: __TEST_HOOKS__ ? detachLog : undefined,
+    });
+    bar = new ControlBar(runtime);
+    controlBar = bar;
+    void bar.restore().catch(() => undefined);
+    return runtime;
+  },
   clear: async () => {
     // 旧运行期的写入已封闭且排空。使用未封闭存储清理，保留网页与物理安装身份。
     await new SiteStore(local, session).clear();
     await new TabRegistry(session).forgetAll();
     await local.remove('state.account');
+    await session.remove('control.conversations');
   },
 });
 
@@ -73,6 +86,7 @@ chrome.tabs.onCreated.addListener((tab) => {
   });
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  void controlBar?.remove(tabId);
   void settings.ready.then(async () => {
     const r = settings.runtime!;
     await Promise.all([r.tabs.onTabRemoved(tabId), r.sessions.detach(tabId)]);
@@ -82,20 +96,28 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   void settings.runtime?.sessions.peek(tabId)?.clearViewportOverride();
 });
 chrome.tabs.onReplaced.addListener((added, removed) => {
+  void controlBar?.remove(removed);
   void settings.ready.then(async () => {
     const r = settings.runtime!;
     await Promise.all([r.sessions.detach(removed), r.tabs.onTabReplaced(added, removed)]);
+    if (settings.runtime === r) await controlBar?.ensure(added);
   });
 });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === 'loading' || changeInfo.url !== undefined) void controlBar?.remove(tabId);
+  if (changeInfo.status === 'complete') void controlBar?.ensure(tabId);
   if (changeInfo.groupId === undefined) return;
   const r = settings.runtime;
   if (!r) return;
   void r.tabs.onTabGroupChanged(tabId, changeInfo.groupId).then((lost) => {
-    if (lost !== null) void r.sessions.detach(tabId);
+    if (lost !== null) {
+      void r.sessions.detach(tabId);
+      void controlBar?.remove(tabId);
+    }
   });
 });
 chrome.windows.onRemoved.addListener((windowId) => settings.runtime?.prompts.windowClosed(windowId));
+chrome.permissions.onRemoved.addListener(() => { void controlBar?.restore().catch(() => undefined); });
 
 // 沿用现有空闲附着回收，不增加外部巡检或监控。
 setInterval(() => {
@@ -137,6 +159,9 @@ async function popupState(): Promise<PopupState> {
     shared, shareTarget: await r.tabs.shareTarget(), activeConversations: await r.tabs.conversationCount(),
     serverOrigin: r.options.origin, serverEpoch: r.epoch,
     serverSwitching: settings.switching, serverPermissionGranted: settings.permissionGranted,
+    controlTabId: usedBy !== null && site !== null ? tab!.id! : null,
+    controlOrigin: usedBy !== null ? site : null,
+    controlledConversations: r.controls.list(),
     ...(status.account !== undefined ? { account: status.account } : {}),
     ...(status.lastError !== undefined ? { lastError: status.lastError } : {}),
   };
@@ -149,6 +174,20 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
   switch (msg.type) {
     case 'popup:state': return popupState();
     case 'popup:setServer': return settings.select(msg.origin, msg.epoch);
+    case 'popup:resumeConversation': {
+      if (msg.epoch !== r.epoch || typeof msg.conversation !== 'string') return { ok: false };
+      await r.controls.resume(msg.conversation);
+      return { ok: settings.runtime === r && !settings.switching };
+    }
+    case 'popup:showControls': {
+      const bar = controlBar;
+      if (msg.epoch !== r.epoch || !Number.isInteger(msg.tabId) || !bar) return { ok: false };
+      const tab = await chrome.tabs.get(msg.tabId);
+      if (!tab.url || siteOf(tab.url) === null || await r.tabs.conversationOf(msg.tabId) === null) return { ok: false };
+      if (!await chrome.permissions.contains({ origins: [serverHostPermission(tab.url)] }) || settings.runtime !== r) return { ok: false };
+      await bar.ensure(msg.tabId, true);
+      return { ok: bar.has(msg.tabId) };
+    }
     case 'popup:setDisplayName': {
       const ok = await identity.setDisplayName(String(msg.name ?? ''));
       if (ok && settings.permissionGranted) r.manager.reconnectNow();
@@ -164,7 +203,10 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
       const site = siteOf(tab?.url ?? '');
       if (tab?.id === undefined || site === null) return { ok: false };
       const conversation = await r.tabs.share(tab.id);
-      if (conversation !== null) await r.sites.grant(conversation, site, 'conversation');
+      if (conversation !== null) {
+        await r.sites.grant(conversation, site, 'conversation');
+        if (settings.runtime === r) await controlBar?.ensure(tab.id);
+      }
       return { ok: true, pending: conversation === null };
     }
     case 'popup:unshare': {
@@ -172,6 +214,7 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
       if (tab?.id !== undefined) {
         await r.tabs.unshare(tab.id);
         await r.sessions.detach(tab.id);
+        await controlBar?.remove(tab.id);
       }
       return { ok: true };
     }
@@ -188,6 +231,11 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
 chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   const msg = raw as PageMessage;
   if (typeof msg !== 'object' || msg === null || typeof msg.type !== 'string') return false;
+  if (msg.type.startsWith('panel:')) {
+    if (!controlBar) { sendResponse({ ok: false }); return false; }
+    controlBar.handle(raw, sender).then(sendResponse, () => sendResponse({ ok: false }));
+    return true;
+  }
   if (msg.type === 'prompt:get' || msg.type === 'prompt:answer') {
     if (!fromOwnPage(sender, 'approval.html')) return false;
     const windowId = sender.tab?.windowId;

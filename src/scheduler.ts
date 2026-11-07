@@ -145,6 +145,22 @@ export class Scheduler {
     }
   }
 
+  /** 显式接管一个对话：取消其执行和队列，等待执行器退出；其它对话不受影响。 */
+  async abortConversation(conversation: string, reason: AbortReason): Promise<void> {
+    const lane = this.lanes.get(conversation);
+    if (!lane) return;
+    lane.releasing++;
+    const running = lane.running;
+    running?.ctrl.abort(reason);
+    for (const request of lane.queue.splice(0)) {
+      this.answer({ type: 'result', request_id: request.request_id, outcome: 'error', code: reason.code, message: reason.message });
+    }
+    try { await running?.done; } finally {
+      lane.releasing--;
+      this.pump(conversation);
+    }
+  }
+
   /** 用户叫停（提示条上的「取消」、弹窗里的「停止」）：正在跑的中止，排队的全部回 user_stopped。 */
   stopAll(message: string): void {
     this.abortAll({ code: 'user_stopped', message });

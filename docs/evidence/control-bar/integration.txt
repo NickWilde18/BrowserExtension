@@ -1,0 +1,13 @@
+
+Running 8 tests using 1 worker
+
+  ✓  1 test/e2e/control-bar.spec.ts:7:1 › 普通用户页不注入；伪造控制消息被拒，保留网页但撤销归属后控制条移除 (738ms)
+  ✓  2 test/e2e/control-bar.spec.ts:27:1 › 已授权给助手但未给注入权限的另一来源，不擅自安装控制条 (552ms)
+  ✓  3 test/e2e/control-bar.spec.ts:36:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (1.4s)
+  ✓  4 test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 (548ms)
+  ✓  5 test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 (1.2s)
+  ✓  6 test/e2e/turn-release.spec.ts:43:1 › 回答结束释放本轮所有标签，保留网页与另一对话的附着 (787ms)
+  ✓  7 test/e2e/turn-release.spec.ts:61:1 › 迟到的旧回合释放不打断新回合，结束后旧请求不再执行 (567ms)
+  ✓  8 test/e2e/turn-release.spec.ts:78:1 › 停止回合取消等待中的确认，保留连接并允许下一轮 (656ms)
+
+  8 passed (7.1s)

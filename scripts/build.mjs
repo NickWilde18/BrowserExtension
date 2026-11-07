@@ -80,6 +80,7 @@ await build({
     background: path.join(root, 'src/background.ts'),
     popup: path.join(root, 'src/popup/popup.ts'),
     approval: path.join(root, 'src/approval/page.ts'),
+    controlbar: path.join(root, 'src/controlbar/page.ts'),
   },
   outdir: outDir,
   bundle: true,

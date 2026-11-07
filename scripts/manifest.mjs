@@ -45,7 +45,7 @@ export function buildManifest({ version, platformOrigin, key }) {
       default_title: '__MSG_extName__',
       default_icon: { 16: 'icons/browser-assistant-16.png', 32: 'icons/browser-assistant-32.png' },
     },
-    permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies'],
+    permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies', 'scripting'],
     host_permissions: [hostPermission],
     // 只在用户明确保存平台来源或开启网页控制条时申请对应来源，不在安装时授予全站。
     optional_host_permissions: ['http://*/*', 'https://*/*'],

@@ -29,6 +29,7 @@
     <section id="stoppedRow" class="stopped" hidden>
       <p data-i18n="stopped"></p>
       <button id="resume" type="button" data-i18n="resume"></button>
+      <p class="hint" data-i18n="globalResumeHint"></p>
     </section>
 
     <section>
@@ -50,11 +51,20 @@
       <p id="shareTarget" class="hint"></p>
       <p id="sharedRow" hidden><span data-i18n="shared"></span> <button id="unshare" type="button" data-i18n="unshare"></button></p>
       <p id="shareNote" class="hint" data-i18n="shareHint"></p>
+      <button id="showControls" type="button" data-i18n="showControls" hidden></button>
+      <p id="controlsHint" class="hint" data-i18n="controlsHint" hidden></p>
+      <p id="controlsError" class="hint" role="status" hidden></p>
     </section>
 
     <section>
       <button id="stop" type="button" class="danger" data-i18n="stop"></button>
       <p class="hint" data-i18n="stopHint"></p>
+    </section>
+
+    <section id="controlledSection" hidden>
+      <h2 data-i18n="controlledConversations"></h2>
+      <ul id="controlledConversations"></ul>
+      <p class="hint" data-i18n="controlledHint"></p>
     </section>
 
     <section>

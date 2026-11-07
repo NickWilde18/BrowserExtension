@@ -28,9 +28,49 @@ const RECONNECTABLE = new Set(['replaced', 'error', 'offline', 'waiting_login'])
 type ServerState = Pick<PopupState,
   'serverOrigin' | 'serverEpoch' | 'serverSwitching' | 'serverPermissionGranted'>;
 let latestServerState: ServerState | null = null;
+let latestControlState: Pick<PopupState, 'controlOrigin' | 'controlTabId' | 'serverEpoch'> | null = null;
 let serverDraftDirty = false;
 let serverSaving = false;
 let serverFeedback: { key: string; error: boolean } | null = null;
+let controlledSignature = '';
+
+function renderControlledConversations(st: PopupState): void {
+  const signature = JSON.stringify([st.serverEpoch, st.controlledConversations, st.serverSwitching]);
+  if (signature === controlledSignature) return;
+  controlledSignature = signature;
+  $('controlledSection').hidden = st.controlledConversations.length === 0;
+  const items = st.controlledConversations.map((entry) => {
+    const item = document.createElement('li');
+    const title = document.createElement('span');
+    title.textContent = entry.title;
+    item.append(title);
+    if (entry.mode === 'user') {
+      const button = document.createElement('button');
+      button.textContent = t('controlResume');
+      button.disabled = st.serverSwitching;
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          const result = await send<{ ok: boolean }>({ type: 'popup:resumeConversation', conversation: entry.conversation, epoch: st.serverEpoch });
+          if (!result?.ok) throw new Error('unavailable');
+          await render();
+        } catch {
+          button.disabled = false;
+          const note = document.createElement('span');
+          note.textContent = t('controlUnavailable');
+          item.append(note);
+        }
+      });
+      item.append(button);
+    } else {
+      const mode = document.createElement('span');
+      mode.textContent = t(entry.mode === 'observing' ? 'controlObserve' : 'controlTaking');
+      item.append(mode);
+    }
+    return item;
+  });
+  $('controlledConversations').replaceChildren(...items);
+}
 
 function normalizeServerOrigin(value: string): URL | null {
   // 只接收来源地址；不默默剥掉路径或凭据，也不让 URL 的宽松解析接收反斜杠等输入。
@@ -169,6 +209,11 @@ async function render(): Promise<void> {
     return;
   }
 
+  renderControlledConversations(st);
+  latestControlState = { controlOrigin: st.controlOrigin, controlTabId: st.controlTabId, serverEpoch: st.serverEpoch };
+  $('showControls').hidden = st.controlTabId === null;
+  ($('showControls') as HTMLButtonElement).disabled = st.serverSwitching;
+  $('controlsHint').hidden = st.controlTabId === null;
   latestServerState = {
     serverOrigin: st.serverOrigin,
     serverEpoch: st.serverEpoch,
@@ -216,6 +261,26 @@ async function render(): Promise<void> {
 }
 
 function wire(): void {
+  $('showControls').addEventListener('click', async () => {
+    const state = latestControlState;
+    if (!state?.controlOrigin || state.controlTabId === null) return;
+    const origin = new URL(state.controlOrigin);
+    $('controlsError').hidden = true;
+    try {
+      // 不先 await 查询页面，以保留用户点击带来的权限申请手势。
+      const allowed = await chrome.permissions.request({ origins: [`${origin.protocol}//${origin.hostname}/*`] });
+      if (!allowed) {
+        $('controlsError').textContent = t('controlPermissionDenied');
+        $('controlsError').hidden = false;
+        return;
+      }
+      const result = await send<{ ok: boolean }>({ type: 'popup:showControls', tabId: state.controlTabId, epoch: state.serverEpoch });
+      if (!result?.ok) throw new Error('unavailable');
+    } catch {
+      $('controlsError').textContent = t('controlUnavailable');
+      $('controlsError').hidden = false;
+    }
+  });
   $('introOk').addEventListener('click', () => {
     void send({ type: 'popup:dismissIntro' }).then(render);
   });

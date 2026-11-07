@@ -4,6 +4,7 @@
 // 再按发送方页面核对一遍（见 background.ts 的 onMessage）。
 
 import type { ShareTarget } from './browser/tabs';
+import type { ControlMode } from './browser/control';
 import type { ConnectionState } from './connection/manager';
 import type { ApprovalKind } from './protocol/frames';
 
@@ -55,6 +56,9 @@ export interface PopupState {
   serverEpoch: string;
   serverSwitching: boolean;
   serverPermissionGranted: boolean;
+  controlTabId: number | null;
+  controlOrigin: string | null;
+  controlledConversations: Array<{ conversation: string; title: string; mode: ControlMode }>;
 }
 
 export type PageMessage =
@@ -62,6 +66,8 @@ export type PageMessage =
   | { type: 'prompt:answer'; id: string; answer: PromptAnswer }
   | { type: 'popup:state' }
   | { type: 'popup:setServer'; origin: string; epoch: string }
+  | { type: 'popup:showControls'; tabId: number; epoch: string }
+  | { type: 'popup:resumeConversation'; conversation: string; epoch: string }
   | { type: 'popup:setDisplayName'; name: string }
   | { type: 'popup:setAutoMode'; on: boolean }
   | { type: 'popup:stop' }
