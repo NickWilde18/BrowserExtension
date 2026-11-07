@@ -1,0 +1,28 @@
+{
+  "accepted": false,
+  "checks": {
+    "integrity": true,
+    "target_origin_matches": false,
+    "host_permission_matches": true,
+    "stable_extension_key": true,
+    "exact_permissions": true,
+    "optional_permissions": true,
+    "production_only": true,
+    "real_transport": true,
+    "cookie_listener_only": true,
+    "no_service_header": true,
+    "injection_and_license_resources": true,
+    "tested_directory_equals_zip": true,
+    "version_matches_package": true,
+    "dom_worker_minimal_permissions": true,
+    "dom_worker_production": true,
+    "dom_worker_background": true,
+    "dom_event_minimal_permissions": true,
+    "dom_event_production": true,
+    "dom_event_background": true
+  },
+  "version": "0.1.0",
+  "files": 19,
+  "bytes": 219629,
+  "sha256": "1a268485c0de9a287f49831a664fb42ffb5490a83c61e2a984d5c1313ed06bab"
+}

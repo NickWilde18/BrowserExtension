@@ -186,11 +186,18 @@ test('press_key：单键与组合键', async () => {
   expect(bad.code).toBe('invalid_args');
 });
 
-test('scroll：滚到元素与滚轮', async () => {
+test('scroll：首个可信滚轮到达页面，随后可滚到元素', async () => {
   await call(h, 'open', { url: `${A}/long.html` });
   const page = await aiPage(h, '/long.html');
+  await page.evaluate(() => {
+    (window as any).__trustedWheels = 0;
+    window.addEventListener('wheel', (event) => {
+      if (event.isTrusted) (window as any).__trustedWheels++;
+    }, { passive: true });
+  });
   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+  expect(await page.evaluate(() => (window as any).__trustedWheels)).toBe(1);
   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
 
   const snap = await snapshot();

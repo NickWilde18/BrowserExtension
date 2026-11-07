@@ -1,0 +1,14 @@
+
+Running 9 tests using 1 worker
+
+  ✓  1 test/e2e/approval-timeout.spec.ts:8:3 › 密码确认超时保留准确结果与已发生效果 (2.1s)
+  ✓  2 test/e2e/approval-timeout.spec.ts:8:3 › 自输完成超时保留准确结果与已发生效果 (2.1s)
+  ✓  3 test/e2e/approval-timeout.spec.ts:8:3 › 脚本确认超时保留准确结果与已发生效果 (2.1s)
+  ✓  4 test/e2e/approval-timeout.spec.ts:8:3 › 上传确认超时保留准确结果与已发生效果 (2.1s)
+  ✓  5 test/e2e/approval-timeout.spec.ts:8:3 › 跨站确认超时保留准确结果与已发生效果 (2.2s)
+  ✓  6 test/e2e/approval-timeout.spec.ts:8:3 › 下载确认超时保留准确结果与已发生效果 (3.1s)
+  ✓  7 test/e2e/approvals.spec.ts:48:3 › 确认窗：button 关闭只拒绝当前动作，不全局停止浏览器 (702ms)
+  ✓  8 test/e2e/approvals.spec.ts:48:3 › 确认窗：Escape 关闭只拒绝当前动作，不全局停止浏览器 (620ms)
+  ✓  9 test/e2e/approvals.spec.ts:159:1 › 站点授权：拒绝不开标签；超时回 approval_timeout (2.0s)
+
+  9 passed (17.6s)

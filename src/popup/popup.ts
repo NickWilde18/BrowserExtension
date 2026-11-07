@@ -210,6 +210,9 @@ async function render(): Promise<void> {
   }
 
   renderControlledConversations(st);
+  const readOnly = st.supportedActions.length === 1 && st.supportedActions[0] === 'read';
+  $('executionHint').hidden = !readOnly && st.supportedActions.length > 0;
+  $('executionHint').textContent = t(readOnly ? 'readOnlyHint' : 'noActionsHint');
   latestControlState = { controlOrigin: st.controlOrigin, controlTabId: st.controlTabId, serverEpoch: st.serverEpoch };
   $('showControls').hidden = st.controlTabId === null;
   ($('showControls') as HTMLButtonElement).disabled = st.serverSwitching;
@@ -275,7 +278,10 @@ function wire(): void {
         return;
       }
       const result = await send<{ ok: boolean }>({ type: 'popup:showControls', tabId: state.controlTabId, epoch: state.serverEpoch });
-      if (!result?.ok) throw new Error('unavailable');
+      if (!result?.ok) {
+        $('controlsError').textContent = t('pageAccessNoControls');
+        $('controlsError').hidden = false;
+      }
     } catch {
       $('controlsError').textContent = t('controlUnavailable');
       $('controlsError').hidden = false;

@@ -7,6 +7,8 @@ export const ERROR_CODES = [
   'element_not_found',
   'site_changed',
   'unsupported_page',
+  'unsupported_action',
+  'approval_timeout',
   'attach_failed',
   'no_tab',
   'file_too_large',

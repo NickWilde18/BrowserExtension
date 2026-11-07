@@ -95,7 +95,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   void settings.runtime?.sessions.peek(tabId)?.clearViewportOverride();
 });
-chrome.tabs.onReplaced.addListener((added, removed) => {
+chrome.tabs.onReplaced?.addListener((added, removed) => {
   void controlBar?.remove(removed);
   void settings.ready.then(async () => {
     const r = settings.runtime!;
@@ -151,6 +151,7 @@ async function popupState(): Promise<PopupState> {
   const status = r.manager.status;
   return {
     connection: status.state,
+    supportedActions: [...r.backend.actions],
     displayName: await identity.displayName(),
     autoMode: (await local.get<boolean>(AUTO_MODE_KEY)) ?? true,
     stopped, introSeen: (await local.get<boolean>(INTRO_KEY)) === true,

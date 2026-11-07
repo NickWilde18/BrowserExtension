@@ -1,5 +1,6 @@
 // 一个活动服务器的运行期。切换时销毁整个对象，旧任务只持有旧对象，不会取得新连接。
-import { runRequest } from './actions';
+import { executeDebugAction, runRequest } from './actions';
+import { createExecutionBackend, type ExecutionBackend } from './browser/backend';
 import { STOPPED_MESSAGE, type Notices, type Services } from './actions/context';
 import { Gate } from './approval/gate';
 import { PromptManager } from './approval/prompts';
@@ -52,6 +53,7 @@ export class BrowserRuntime {
   readonly scheduler: Scheduler;
   readonly notices: Notices;
   readonly controls: ConversationControl;
+  readonly backend: ExecutionBackend;
   private readonly local: ScopedKV;
   private readonly session: ScopedKV;
   private readonly pendingNotices = new Map<string, string[]>();
@@ -62,6 +64,7 @@ export class BrowserRuntime {
   private disposal: Promise<void> | null = null;
 
   constructor(readonly options: RuntimeOptions) {
+    this.backend = createExecutionBackend(executeDebugAction);
     this.local = new ScopedKV(options.local);
     this.session = new ScopedKV(options.session);
     this.sites = new SiteStore(this.local, this.session);
@@ -109,7 +112,7 @@ export class BrowserRuntime {
     const accounts = new AccountWatch(this.local, () => this.forgetPreviousAccount());
     this.manager = new ConnectionManager({
       transportFactory: () => options.transport(options.origin),
-      hello: () => options.identity.hello(),
+      hello: () => options.identity.hello(this.backend.actions),
       beforeReady: (account) => accounts.connected(account).then(() => undefined),
       onFrame: (frame) => {
         if (this.disposed) return;
@@ -145,6 +148,7 @@ export class BrowserRuntime {
       // 文件任务只能取得本次请求所属服务器、账号的传输，重连仍属同一运行期。
       const current = () => !this.disposed && generation === this.generation;
       const services: Services = {
+        backend: this.backend,
         tabs: this.tabs, sessions: this.sessions, sites: this.sites,
         gate, prompts: this.prompts, downloads: this.downloads,
         transport: () => current() ? this.manager.transport : null,
@@ -152,6 +156,7 @@ export class BrowserRuntime {
         stopped: () => !current() || options.stopped(),
         acting: this.acting, notices: this.notices,
       };
+      if (!this.backend.actions.includes(request.action)) return runRequest(services, request, signal);
       try {
         const version = await this.controls.begin(request, (await this.tabs.active(request.conversation)) !== null);
         const result = await runRequest(services, request, signal);

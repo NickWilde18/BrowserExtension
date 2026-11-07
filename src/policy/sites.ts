@@ -1,85 +1,82 @@
-// 站点授权记录，只存在插件本地，按来源记，服务端不知道（计划 4.5「站点授权」）。
-//
-// - 总是允许：storage.local，跨浏览器重启保留，用户在弹窗里撤销。
-// - 仅本次对话：storage.session，按对话 id 记，浏览器关掉就没了。
-// - 用户点「共享此页」也记一条本次对话的授权。
-//
-// 「总是允许此站点」不免掉密码框、上传、下载、脚本这四类的逐次确认（那四类不经这里判）。
-
+// 站点授权只存在插件本地；清理/撤销先失效旧代数，防迟到 grant 重新加回权限。
 import type { KV } from '../storage';
 
 const ALWAYS_KEY = 'sites.always';
 const CONVERSATION_KEY = 'sites.conversation';
-
 export type GrantScope = 'always' | 'conversation';
-
-export interface SiteGrants {
-  always: string[];
-  conversation: Record<string, string[]>;
-}
+export interface SiteGrants { always: string[]; conversation: Record<string, string[]> }
 
 export class SiteStore {
+  private revision = 0;
+  private writing: Promise<void> = Promise.resolve();
   constructor(private readonly local: KV, private readonly session: KV) {}
 
-  /** 这个对话能不能在这个站点上动作。 */
   async isAllowed(conversation: string, site: string): Promise<boolean> {
+    await this.writing;
+    const revision = this.revision;
     const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
-    if (always.includes(site)) {
-      return true;
-    }
-
+    if (revision !== this.revision) return false;
+    if (always.includes(site)) return true;
     const byConversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
-    return (byConversation[conversation] ?? []).includes(site);
+    return revision === this.revision && (byConversation[conversation] ?? []).includes(site);
   }
 
-  async grant(conversation: string, site: string, scope: GrantScope): Promise<void> {
-    if (scope === 'always') {
+  grant(conversation: string, site: string, scope: GrantScope): Promise<void> {
+    return this.update(async (current) => {
+      if (scope === 'always') {
+        const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
+        if (!current()) return;
+        if (!always.includes(site)) { always.push(site); await this.local.set(ALWAYS_KEY, always); }
+        return;
+      }
+      const byConversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
+      if (!current()) return;
+      const list = byConversation[conversation] ?? [];
+      if (!list.includes(site)) {
+        list.push(site);
+        byConversation[conversation] = list;
+        await this.session.set(CONVERSATION_KEY, byConversation);
+      }
+    });
+  }
+
+  revoke(site: string): Promise<void> {
+    this.revision++;
+    return this.update(async () => {
       const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
-      if (!always.includes(site)) {
-        always.push(site);
-        await this.local.set(ALWAYS_KEY, always);
+      await this.local.set(ALWAYS_KEY, always.filter((s) => s !== site));
+      const byConversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
+      for (const key of Object.keys(byConversation)) {
+        const kept = (byConversation[key] ?? []).filter((s) => s !== site);
+        if (kept.length) byConversation[key] = kept;
+        else delete byConversation[key];
       }
-
-      return;
-    }
-
-    const byConversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
-    const list = byConversation[conversation] ?? [];
-    if (!list.includes(site)) {
-      list.push(site);
-      byConversation[conversation] = list;
       await this.session.set(CONVERSATION_KEY, byConversation);
-    }
+    }, false);
   }
 
-  /** 撤销一个站点：总是允许与各对话里的授权一起删。 */
-  async revoke(site: string): Promise<void> {
-    const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
-    await this.local.set(ALWAYS_KEY, always.filter((s) => s !== site));
-
-    const byConversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
-    for (const key of Object.keys(byConversation)) {
-      const kept = (byConversation[key] ?? []).filter((s) => s !== site);
-      if (kept.length === 0) {
-        delete byConversation[key];
-      } else {
-        byConversation[key] = kept;
-      }
-    }
-
-    await this.session.set(CONVERSATION_KEY, byConversation);
-  }
-
-  /** 换了平台账号（补充约定 4）：总是允许与各对话的授权都清掉（那是上一个账号的用户给的）。 */
-  async clear(): Promise<void> {
-    await this.local.remove(ALWAYS_KEY);
-    await this.session.remove(CONVERSATION_KEY);
+  clear(): Promise<void> {
+    this.revision++;
+    return this.update(async () => {
+      await this.local.remove(ALWAYS_KEY);
+      await this.session.remove(CONVERSATION_KEY);
+    }, false);
   }
 
   async list(): Promise<SiteGrants> {
-    return {
-      always: (await this.local.get<string[]>(ALWAYS_KEY)) ?? [],
-      conversation: (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {},
-    };
+    await this.writing;
+    const revision = this.revision;
+    const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
+    const conversation = (await this.session.get<Record<string, string[]>>(CONVERSATION_KEY)) ?? {};
+    return revision === this.revision ? { always, conversation } : { always: [], conversation: {} };
+  }
+
+  private update(work: (current: () => boolean) => Promise<void>, skipIfStale = true): Promise<void> {
+    const revision = this.revision;
+    const current = () => revision === this.revision;
+    // 授权可因撤销失效；撤权和清理必须逐项执行，不能被后续撤权跳过。
+    const write = this.writing.catch(() => undefined).then(async () => { if (!skipIfStale || current()) await work(current); });
+    this.writing = write;
+    return write;
   }
 }

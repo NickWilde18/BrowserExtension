@@ -19,7 +19,7 @@ export const DEV_PUBLIC_KEY =
 
 export const DEV_EXTENSION_ID = 'agagklnjfndomhambbpfhenaoclcbpmo';
 
-export function buildManifest({ version, platformOrigin, key }) {
+export function buildManifest({ version, platformOrigin, key, executionBackend = 'auto', backgroundMode = 'worker' }) {
   // Cookie 变化事件按协议与主机匹配，不带端口；实际请求仍使用完整平台来源。
   const platform = new URL(platformOrigin);
   const hostPermission = `${platform.protocol}//${platform.hostname}/*`;
@@ -31,9 +31,11 @@ export function buildManifest({ version, platformOrigin, key }) {
     version,
     default_locale: 'en',
     // chrome.debugger 的子会话（DebuggerSession.sessionId，跨源 iframe 要用）从 125 起可用。
-    minimum_chrome_version: '125',
+    ...(backgroundMode === 'worker' ? { minimum_chrome_version: '125' } : {}),
     key,
-    background: { service_worker: 'background.js', type: 'module' },
+    background: backgroundMode === 'event'
+      ? { scripts: ['background.js'], type: 'module', persistent: false }
+      : { service_worker: 'background.js', type: 'module' },
     icons: {
       16: 'icons/browser-assistant-16.png',
       32: 'icons/browser-assistant-32.png',
@@ -45,7 +47,9 @@ export function buildManifest({ version, platformOrigin, key }) {
       default_title: '__MSG_extName__',
       default_icon: { 16: 'icons/browser-assistant-16.png', 32: 'icons/browser-assistant-32.png' },
     },
-    permissions: ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies', 'scripting'],
+    permissions: executionBackend === 'dom'
+      ? ['tabs', 'storage', 'cookies', 'scripting']
+      : ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies', 'scripting'],
     host_permissions: [hostPermission],
     // 只在用户明确保存平台来源或开启网页控制条时申请对应来源，不在安装时授予全站。
     optional_host_permissions: ['http://*/*', 'https://*/*'],

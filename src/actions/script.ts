@@ -41,7 +41,7 @@ export async function evaluate(ctx: ActionContext, a: EvaluateArgs): Promise<Act
   });
   if (r.result !== 'allow') {
     ctx.throwIfAborted();
-    throw new ActionError('user_denied', r.result === 'deny' && r.why === 'timeout'
+    throw new ActionError(r.result === 'deny' && r.why === 'timeout' ? 'approval_timeout' : 'user_denied', r.result === 'deny' && r.why === 'timeout'
       ? 'The user did not answer in time whether the assistant may run the script.'
       : 'The user did not allow the script to run.');
   }

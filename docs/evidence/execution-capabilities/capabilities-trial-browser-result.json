@@ -1,0 +1,30 @@
+{
+  "independentProfile": true,
+  "productionExtension": true,
+  "loginRedirectedToChat": true,
+  "extensionIdMatches": true,
+  "states": [
+    {
+      "connection": "waiting_login",
+      "lastError": "unauthenticated"
+    },
+    {
+      "connection": "connected",
+      "lastError": null
+    }
+  ],
+  "streamResponses": [
+    {
+      "targetMatches": true,
+      "status": 401,
+      "method": "POST"
+    },
+    {
+      "targetMatches": true,
+      "status": 200,
+      "method": "POST"
+    }
+  ],
+  "connected": true,
+  "ownBrowserClosed": true
+}

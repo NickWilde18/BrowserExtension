@@ -1,0 +1,5 @@
+built ../../../../../../../.claude/jobs/1c452ec1/tmp/dom-event-probe-HJ2dnT/extension platform=http://127.0.0.1:18971 testHooks=true fakeTransport=true injected=1.62.1
+Running web extension from /home/linche/.claude/jobs/1c452ec1/tmp/dom-event-probe-HJ2dnT/extension
+Use --verbose or --devtools to see logging
+Installed /home/linche/.claude/jobs/1c452ec1/tmp/dom-event-probe-HJ2dnT/extension as a temporary add-on
+Automatic extension reloading has been disabled

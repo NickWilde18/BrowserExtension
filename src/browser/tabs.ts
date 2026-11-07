@@ -374,6 +374,7 @@ export class TabRegistry {
     const last = await this.kv.get<string>(LAST_KEY);
     if (last && all[last]) {
       all[last].shared.push(tabId);
+      all[last].active ??= tabId;
       await this.save();
       return last;
     }

@@ -27,7 +27,7 @@ pnpm install
 PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/；也可以写 pnpm build --platform-origin https://…
 ```
 
-- 平台对外地址是用户地址栏里的那个，manifest 的主机权限由它生成，真实传输连它。插件里只有这一个地址。
+- 平台对外地址是用户地址栏里的那个，manifest 的初始主机权限由它生成。工具栏「高级设置」可切换单个活动服务器；只保存平台连接 origin，不保存第三方网页 URL。切换需要用户手势申请对应来源权限，旧请求、授权、页归属、接管与连接清理完成后才连接新服务器。
 - 构建时从 `playwright-core`（版本钉死 1.62.1）取出页面注入脚本，许可（Apache-2.0）随产物放在
   `dist/third_party/playwright/`。换版本时 `scripts/extract-injected.mjs` 的结构断言会先失败。
 - 生产构建检查产物：不含测试用的假传输与测试入口，含真实传输，不出现 `X-Service`。`--fake-transport` 只能和
@@ -39,10 +39,10 @@ PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/
 manifest 里的 `key` 固定了开发者模式的插件 id：**`agagklnjfndomhambbpfhenaoclcbpmo`**，平台的
 `browserExtension.allowedExtensionIds` 要登记它（商店上架后商店会给另外的 id，也要登记）。对应的私钥不在仓库里。
 
-权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`、`cookies`，以及平台地址的主机权限。`cookies` 只用来
+默认构建权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`、`cookies`、`scripting`，以及平台地址的主机权限。`cookies` 只用来
 监听平台站点会话 Cookie 的变化：同一台浏览器上退出登录、换人登录时一变就断开重连（`src/connection/cookie-watch.ts`），
 不读写 Cookie，构建后会检查产物里没有读写 Cookie 的调用；Chrome 只把主机权限覆盖的站点的 Cookie 事件交给插件，插件的
-主机权限只有平台地址。不申请 `proxy`、`management`，不声明 `externally_connectable`，不注册内容脚本。安装时浏览器会
+初始主机权限只有构建平台地址；可选 http(s) 来源权限仅在用户点击切换服务器或显示控制条时按具体来源申请。不申请 `proxy`、`management`，不声明 `externally_connectable`，不注册自动内容脚本。安装时浏览器会
 提示「读取和更改所有网站上的数据」，来自 `debugger` 权限。
 
 收会话 Cookie 的变化事件有两个前提（实测）：主机权限不带端口（Chrome 按 `<协议>://<域>/` 判匹配，带端口会收不到）；
@@ -57,7 +57,7 @@ pnpm test                       # vitest 单测
 xvfb-run -a pnpm e2e            # Playwright 端到端（不带 xvfb-run 时，要有界面的那个用例会跳过）
 ```
 
-`pnpm e2e` 先构建两个测试版（`pnpm build:test`），再在本地夹具站点（`test/e2e/fixtures/server.mjs`，`127.0.0.1` 与
+`pnpm e2e` 先构建三个测试版（`pnpm build:test`），再在本地夹具站点（`test/e2e/fixtures/server.mjs`，`127.0.0.1` 与
 `localhost` 两个来源）上真跑动作、点确认小窗：
 
 - `dist-test/`（`--test-hooks --fake-transport`）：连接换成内存假传输，测试代码扮演 Chat 收发帧；
@@ -66,8 +66,34 @@ xvfb-run -a pnpm e2e            # Playwright 端到端（不带 xvfb-run 时，�
   被拒时的响应体与 Chat 一致；`transport.spec.ts` 测连上、动作结果、上传、下载、轮换、断线、401、403、413、
   轮换后到达的审查结论、换账号，以及每个请求只走这四个路径、不带 `X-Service`。
 
-`test/probe/` 是实测用的常驻探测进程（有界面的浏览器 + 本机控制端口 + XTest 点击），用来测调试提示条这类要
+- `dist-test-dom/`（`--test-hooks --fake-transport --execution-backend dom`）：真实扩展只读执行层，验证共享页读取、ref/depth/boxes、隔离世界、来源权限及 iframe 整页拒绝。
+
+`test/probe/` 包含实测用的常驻探测进程（有界面的浏览器 + 本机控制端口 + XTest 点击），用来测调试提示条这类要
 「看一眼屏幕再点」的项目。
+
+## 执行能力与只读原型
+
+hello 可携带 `capabilities: { actions: [...] }`，动作名采用既有协议名。缺字段兼容旧版 22 动作，空数组表示没有可执行动作。客户端优先拒绝所有未声明动作，返回 `unsupported_action`，即使服务器忽略能力字段或设备处于停止/接管状态也如此。
+
+默认 `--execution-backend auto` 根据实际调试 API 选择原执行层；没有完整调试 API、但具备安全读取前置 API 时只声明 `read`，前置不足则声明空数组。可以显式构建只读原型：
+
+```bash
+pnpm build --platform-origin https://example.edu --execution-backend dom --out dist-dom
+# 事件后台原型；event 必须与 dom 一起使用
+pnpm build --platform-origin https://example.edu --execution-backend dom --background-mode event --out dist-dom-event
+```
+
+只读原型仅读取明确共享且浏览器授予来源权限的当前页；共享后通过「授予网页权限并显示控制条」申请原生页面访问权限。只支持单文档的快照/ref/depth/boxes；存在 iframe、受限页面或零视口时整页拒绝，不返回删减快照。不提供导航、写入、上传下载或调试近似执行。切换当前读取页可先取消原当前页共享，再共享新页。
+
+Linux Chromium 已测试只读原型；Firefox 的独立临时扩展探针仅验证基础 API 和合成页面，使用假传输和测试预授权。平台目前只接受已登记的 `chrome-extension://` 来源，Firefox/Safari 平台鉴权来源尚未设计、也未联调。Safari 未在真机加载或执行，Linux WebKit 不作为替代验证。事件后台产物是原型，不表示已交付这些浏览器的产品支持。
+
+## 网页控制与确认结果
+
+已归属/共享的页面可从可信工具栏申请当前来源权限并显示顶层控制条。控制条与调试附着独立，只显示对话标题和动作。点击接管会取消本对话请求并等待释放；完成后显示已接管，其它对话继续。恢复只进入重新观察状态，成功 `read` 前禁止写入，不重放取消动作。最后一页关闭后仍能在工具栏逐对话恢复；全局「恢复」不解除对话接管。普通键鼠活动不自动触发接管。
+
+工具栏「停止」取消当前操作并释放附着，保留网页；它不是可从中间继续的暂停。站点、密码、自输完成、脚本、上传、跨站确认超时返回 `approval_timeout`；明确拒绝、关窗、Esc 仍返回 `user_denied`。操作此前可能已经产生效果，不能自动重试。下载沿用动作已生效的结果：明确拒绝返回 `ok` 和 `payload.download_denied=true`；确认超时另加 `payload.download_timed_out=true`。
+
+分段证据及未验项见 `docs/server-settings-validation.md`、`docs/control-bar-validation.md` 与 `docs/execution-capabilities-validation.md`。本轮不增加插件审计数据库。
 
 ## 页面快照格式
 

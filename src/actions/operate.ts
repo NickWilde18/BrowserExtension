@@ -55,7 +55,7 @@ async function confirmPassword(ctx: ActionContext, site: string | null, field: s
   }
 
   ctx.throwIfAborted();
-  throw new ActionError('user_denied', r.why === 'timeout'
+  throw new ActionError(r.why === 'timeout' ? 'approval_timeout' : 'user_denied', r.why === 'timeout'
     ? 'The user did not answer in time whether the assistant may type into the password field.'
     : 'The user did not allow the assistant to type into the password field.');
 }
@@ -79,7 +79,9 @@ async function letUserType(ctx: ActionContext, s: TabSession, ref: string, promp
     const outcome = await ctx.services.prompts.waitSelfInput(promptId, Math.max(1000, ctx.authWait.remainingMs()));
     if (outcome !== 'done') {
       ctx.throwIfAborted();
-      throw new ActionError('user_denied', 'The user did not finish typing the password.');
+      throw new ActionError(outcome === 'timeout' ? 'approval_timeout' : 'user_denied', outcome === 'timeout'
+        ? 'The confirmation timed out while the user was typing. Changes already made cannot be undone; read the page first and do not retry automatically.'
+        : 'The user did not finish typing the password.');
     }
   } finally {
     ctx.authWait.consume(Date.now() - started);

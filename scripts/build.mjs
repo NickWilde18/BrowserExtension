@@ -33,6 +33,16 @@ function argValue(name) {
 
 const outDir = path.resolve(root, argValue('--out') ?? 'dist');
 const platformOrigin = parsePlatformOrigin(argValue('--platform-origin') ?? process.env.PLATFORM_ORIGIN);
+const executionBackend = argValue('--execution-backend') ?? 'auto';
+const backgroundMode = argValue('--background-mode') ?? 'worker';
+const probeUrl = argValue('--probe-url');
+if (probeUrl && (!testHooks || !fakeTransport || backgroundMode !== 'event')) {
+  throw new Error('probe-url 仅允许事件后台的 test-hooks + fake-transport 构建');
+}
+if (!['auto', 'dom'].includes(executionBackend) || !['worker', 'event'].includes(backgroundMode)
+  || (backgroundMode === 'event' && executionBackend !== 'dom')) {
+  throw new Error('execution-backend 只能为 auto/dom，background-mode 只能为 worker/event；event 需搭配 dom');
+}
 
 /**
  * 校验平台对外地址：只收 http(s) 的来源（协议 + 主机 + 端口），不带路径、查询、账号。
@@ -66,6 +76,11 @@ const injected = extractInjectedSource(pwCoreDir);
 const injectedPlugin = {
   name: 'injected-source',
   setup(b) {
+    b.onResolve({ filter: /^virtual:injected-runtime$/ }, () => ({ path: 'injected-runtime', namespace: 'injected-runtime' }));
+    b.onLoad({ filter: /.*/, namespace: 'injected-runtime' }, () => ({
+      contents: `const snapshotRuntime = (() => { const module = {};\n${injected.source}\nreturn module.exports.InjectedScript(); })(); export { snapshotRuntime as InjectedScript };`,
+      loader: 'js',
+    }));
     b.onResolve({ filter: /^virtual:injected-source$/ }, () => ({ path: 'injected-source', namespace: 'injected' }));
     b.onLoad({ filter: /.*/, namespace: 'injected' }, () => ({
       contents: `export const INJECTED_SOURCE = ${JSON.stringify(injected.source)};\n` +
@@ -93,11 +108,22 @@ await build({
     __PLATFORM_ORIGIN__: JSON.stringify(platformOrigin),
     __TEST_HOOKS__: JSON.stringify(testHooks),
     __FAKE_TRANSPORT__: JSON.stringify(fakeTransport),
+    __EXECUTION_BACKEND__: JSON.stringify(executionBackend),
+    chrome: 'extensionApi',
   },
   plugins: [injectedPlugin],
+  inject: [path.join(root, 'src/browser/api.ts')],
   // 只做语法级压缩（删掉 define 之后的死分支），不改名、不压空白：产物仍可读。
   minifySyntax: true,
   logLevel: 'warning',
+});
+
+// 隔离世界的快照脚本按普通 JS 打包，不依赖运行期 eval，也不把依赖的模块全局留到网页。
+await build({
+  entryPoints: [path.join(root, 'src/browser/dom-agent.ts')],
+  outfile: path.join(outDir, 'dom-agent.js'), bundle: true, format: 'iife',
+  platform: 'browser', target: ['es2022'], legalComments: 'none', charset: 'utf8',
+  plugins: [injectedPlugin], minifySyntax: true, logLevel: 'warning',
 });
 
 // 生产构建：不能有测试用的假传输与测试入口；要有真实传输，且请求里不带 X-Service 头（契约 2.3：带了网关就
@@ -143,7 +169,16 @@ for (const file of ['LICENSE', 'NOTICE']) {
 }
 
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-const manifest = buildManifest({ version: pkg.version, platformOrigin, key: DEV_PUBLIC_KEY });
+const manifest = buildManifest({ version: pkg.version, platformOrigin, key: DEV_PUBLIC_KEY, executionBackend, backgroundMode });
+if (probeUrl) {
+  await build({
+    entryPoints: [path.join(root, 'test/probe/dom-extension-probe.ts')],
+    outfile: path.join(outDir, 'backend-probe.js'), bundle: true, format: 'esm', target: ['es2022'],
+    define: { __PROBE_URL__: JSON.stringify(probeUrl), chrome: 'extensionApi' },
+    inject: [path.join(root, 'src/browser/api.ts')], logLevel: 'warning',
+  });
+  manifest.background.scripts.push('backend-probe.js');
+}
 writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 
 console.log(`built ${path.relative(root, outDir)} platform=${platformOrigin} testHooks=${testHooks} fakeTransport=${fakeTransport} injected=${injected.version}`);

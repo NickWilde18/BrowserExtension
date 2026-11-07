@@ -92,6 +92,8 @@ export interface HelloFrame {
   install_id: string;
   display_name: string;
   extension_version: string;
+  /** 缺省由旧服务按全部动作处理；空数组表示没有可执行动作。 */
+  capabilities?: { actions: ActionName[] };
 }
 
 export interface ProgressFrame {

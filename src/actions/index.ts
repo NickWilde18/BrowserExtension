@@ -2,6 +2,7 @@
 
 import { MAX_RESULT_FRAME_BYTES } from '../config';
 import { validateArgs } from '../protocol/args';
+import type { ActionArgs } from '../protocol/args';
 import { ActionError, toActionError } from '../protocol/errors';
 import type { ActionName, PageInfo, RequestFrame, ResultFrame } from '../protocol/frames';
 import { siteOf } from '../policy/url';
@@ -12,7 +13,7 @@ import { close, navigate, open, tabs } from './navigation';
 import { click, dialog, drag, fillForm, hover, pressKey, scroll, select, type } from './operate';
 import { consoleMessages, find, network, pdf, read, screenshot, wait } from './read';
 import { evaluate } from './script';
-import type { ActionHandler, ActionTable } from './types';
+import type { ActionHandler, ActionOutput, ActionTable } from './types';
 
 const ACTION_TABLE: ActionTable = {
   open,
@@ -48,6 +49,11 @@ function errorResult(requestId: string, err: ActionError, page?: PageInfo): Resu
   return r;
 }
 
+export function executeDebugAction(ctx: ActionContext, args: ActionArgs[ActionName]): Promise<ActionOutput> {
+  const handler = ACTION_TABLE[ctx.request.action] as ActionHandler<ActionName>;
+  return handler(ctx, args as never);
+}
+
 /**
  * 执行一个请求，返回结果帧（不抛异常）。动作之外发生过的事（被取消的下载、被关掉的新标签）附在这个对话这一次
  * 结果的 message 里告诉模型（成功、失败都带）。
@@ -63,29 +69,38 @@ export async function runRequest(services: Services, request: RequestFrame, sign
 }
 
 async function executeRequest(services: Services, request: RequestFrame, signal: AbortSignal): Promise<ResultFrame> {
+  if (services.backend && !services.backend.actions.includes(request.action)) {
+    return errorResult(request.request_id, new ActionError('unsupported_action', 'This device does not support this action. Choose a device that advertises it; do not retry it here.'));
+  }
   if (services.stopped()) {
     return errorResult(request.request_id, new ActionError('user_stopped', STOPPED_MESSAGE));
   }
 
   const ctx = new ActionContext(request, services, signal);
   try {
+    ctx.throwIfAborted();
     const adopted = await services.tabs.touch(request.conversation, request.conversation_title);
+    ctx.throwIfAborted();
     if (adopted !== null) {
       // 用户点「共享此页」时还没有对话在用浏览器：共享给了这个对话，等于授权这一页的站点（限本次对话）。
       const site = siteOf(await currentUrl(adopted).catch(() => ''));
       if (site) {
+        ctx.throwIfAborted();
         await services.sites.grant(request.conversation, site, 'conversation');
+        ctx.throwIfAborted();
       }
     }
 
-    const handler = ACTION_TABLE[request.action] as ActionHandler<ActionName>;
     const args = validateArgs(request.action, request.args);
     // 和中止信号竞速：页面卡住时某个调试命令可能一直不返回，时限一到、被取消或被叫停就立即回结果，
     // 不让这个对话的串行队列被一个挂住的动作堵死。
-    const out = await Promise.race([handler(ctx, args as never), abortPromise(ctx.signal)]);
+    const out = await Promise.race([
+      services.backend ? services.backend.execute(ctx, args) : executeDebugAction(ctx, args), abortPromise(ctx.signal),
+    ]);
     ctx.throwIfAborted();
 
     const result: ResultFrame = { type: 'result', request_id: request.request_id, outcome: 'ok' };
+    if (out.page) result.page = out.page;
     if (out.session && !out.session.detached) {
       result.page = await out.session.pageInfo();
     }

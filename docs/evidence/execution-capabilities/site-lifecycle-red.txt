@@ -1,0 +1,52 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/site-lifecycle.test.ts (2 tests | 2 failed) 9ms
+     × 换账号清理时旧grant还在等读存储，不能在clear后重新加回授权 6ms
+     × 已取消请求收到迟到allow也不得保存授权 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/site-lifecycle.test.ts > 授权清理与旧回调的交错 > 换账号清理时旧grant还在等读存储，不能在clear后重新加回授权
+AssertionError: expected [ 'https://old.test' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "https://old.test",
++ ]
+
+ ❯ test/unit/site-lifecycle.test.ts:28:63
+     26|     local.finish();
+     27|     await Promise.all([granting, clearing]);
+     28|     expect((await local.get<string[]>('sites.always')) ?? []).toEqual(…
+       |                                                               ^
+     29|   });
+     30|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/unit/site-lifecycle.test.ts > 授权清理与旧回调的交错 > 已取消请求收到迟到allow也不得保存授权
+AssertionError: expected 'allowed' to be 'blocked' // Object.is equality
+
+Expected: "blocked"
+Received: "allowed"
+
+ ❯ test/unit/site-lifecycle.test.ts:43:29
+     41|     allow({ result: 'allow', by: 'user', scope: 'always' });
+     42|     try {
+     43|       expect(await pending).toBe('blocked');
+       |                             ^
+     44|       expect(grant).not.toHaveBeenCalled();
+     45|     } finally { ctx.dispose(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  15:24:43
+   Duration  184ms (transform 58ms, setup 0ms, import 75ms, tests 9ms, environment 0ms)
+

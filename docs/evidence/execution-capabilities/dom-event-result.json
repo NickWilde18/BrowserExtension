@@ -1,0 +1,19 @@
+{
+  "actualExtension": true,
+  "transport": "fake",
+  "pageGrant": "test-harness",
+  "capabilities": {
+    "actions": [
+      "read"
+    ]
+  },
+  "unsupportedActionRejected": true,
+  "readCode": null,
+  "readPassed": true,
+  "subtreePassed": true,
+  "framesRejected": false,
+  "noDebugPermission": true,
+  "passed": false,
+  "independentProfile": true,
+  "log": "/home/linche/.claude/jobs/1c452ec1/tmp/dom-event-probe-diSjFG/runner.log"
+}

@@ -8,6 +8,7 @@ import type { CapturedDownload } from '../browser/navguard';
 import type { SessionManager } from '../browser/sessions';
 import type { TabSession } from '../browser/tab-session';
 import type { TabRegistry } from '../browser/tabs';
+import type { ExecutionBackend } from '../browser/backend';
 import { TransportError } from '../connection/transport';
 import type { Transport } from '../connection/transport';
 import { isUnattachableUrl, siteOf } from '../policy/url';
@@ -17,6 +18,7 @@ import type { RequestFrame } from '../protocol/frames';
 import type { AbortReason } from '../scheduler';
 
 export interface Services {
+  backend?: ExecutionBackend;
   tabs: TabRegistry;
   sessions: SessionManager;
   sites: SiteStore;
@@ -42,6 +44,7 @@ export interface Notices {
 export interface DownloadOutcome {
   file?: { file_id: string; kind: 'download'; name: string; size: number; content_type: string };
   denied?: boolean;
+  timedOut?: boolean;
   /**
    * 用户允许了、文件没取回来（站点要求重新登录、链接只能用一次、浏览器断线、送回 Chat 失败）：动作本身已经生效，
    * 结果仍按 ok 回，payload.download_failed，这句原因进 message（契约 3.2）。
@@ -87,6 +90,7 @@ export class ActionContext implements GateContext {
   private readonly downloadJobs: Array<Promise<DownloadOutcome>> = [];
   /** 这个请求期间在响应阶段截下过的下载网址。 */
   private readonly capturedUrls = new Set<string>();
+  private navigationTimedOut = false;
   /** 成功结果里要附给模型的说明（如下载没取回来的原因），runRequest 接在 message 后面。 */
   readonly notes: string[] = [];
 
@@ -201,18 +205,22 @@ export class ActionContext implements GateContext {
 
   /** 站点授权：已授权直接过；否则逐次确认，拒绝抛 user_denied。 */
   async authorizeSite(site: string): Promise<void> {
+    this.throwIfAborted();
     if (await this.services.sites.isAllowed(this.conversation, site)) {
+      this.throwIfAborted();
       return;
     }
 
     const r = await this.services.gate.confirm(this, { kind: 'site', site, reviewDetail: {}, promptDetail: {} });
     if (r.result === 'allow') {
+      this.throwIfAborted();
       await this.services.sites.grant(this.conversation, site, r.scope);
+      this.throwIfAborted();
       return;
     }
 
     this.throwIfAborted();
-    throw new ActionError('user_denied', r.result === 'deny' && r.why === 'timeout'
+    throw new ActionError(r.result === 'deny' && r.why === 'timeout' ? 'approval_timeout' : 'user_denied', r.result === 'deny' && r.why === 'timeout'
       ? `The user did not answer in time whether the assistant may use ${site}.`
       : `The user did not allow the assistant to use ${site}.`);
   }
@@ -230,6 +238,7 @@ export class ActionContext implements GateContext {
    * 页面弹出对话框时不再等（页面脚本被它阻塞），对话框随结果的 page.dialog 交给模型。
    */
   async guarded<T>(s: TabSession, step: () => Promise<T>): Promise<T> {
+    this.navigationTimedOut = false;
     const watch = new NavWatch(s);
     const guard = new NavGuard(s, {
       decide: (site) => this.decideNavigation(site),
@@ -270,7 +279,9 @@ export class ActionContext implements GateContext {
 
       this.throwIfAborted();
       if (guard.blocked) {
-        throw new ActionError('user_denied', `The page tried to go to ${guard.blocked}, which the user did not allow; it was stopped.`);
+        throw new ActionError(this.navigationTimedOut ? 'approval_timeout' : 'user_denied', this.navigationTimedOut
+          ? 'Navigation confirmation timed out and the cross-site navigation was stopped. Effects already triggered cannot be undone; read the page first and do not retry automatically.'
+          : `The page tried to go to ${guard.blocked}, which the user did not allow; it was stopped.`);
       }
 
       return outcome.kind === 'done' ? outcome.value : (undefined as T);
@@ -296,19 +307,22 @@ export class ActionContext implements GateContext {
 
     const r = await this.services.gate.confirm(this, { kind: 'site', site, reviewDetail: {}, promptDetail: {} });
     if (r.result === 'allow') {
+      this.throwIfAborted();
       await this.services.sites.grant(this.conversation, site, r.scope);
+      this.throwIfAborted();
       return true;
     }
 
+    if (r.result === 'deny' && r.why === 'timeout') this.navigationTimedOut = true;
     return false;
   }
 
   /** 下载的逐次确认（kind=download）：发起站点是当前页的站点。返回是否允许。 */
-  private async confirmDownload(s: TabSession, url: string, filename: string, size: number | null, contentType: string): Promise<boolean> {
+  private async confirmDownload(s: TabSession, url: string, filename: string, size: number | null, contentType: string): Promise<{ allowed: boolean; timedOut: boolean }> {
     const site = siteOf(await currentUrl(s.tabId).catch(() => '')) ?? siteOf(url) ?? '';
     const detail = { filename, size, content_type: contentType };
     const r = await this.services.gate.confirm(this, { kind: 'download', site, reviewDetail: detail, promptDetail: detail });
-    return r.result === 'allow';
+    return { allowed: r.result === 'allow', timedOut: r.result === 'deny' && r.why === 'timeout' };
   }
 
   /** 送回 Chat 存成交付文件。 */
@@ -346,9 +360,8 @@ export class ActionContext implements GateContext {
       return { error: new ActionError('file_too_large', DOWNLOAD_TOO_LARGE) };
     }
 
-    if (!await this.confirmDownload(s, d.url, name, d.size, d.contentType)) {
-      return { denied: true };
-    }
+    const verdict = await this.confirmDownload(s, d.url, name, d.size, d.contentType);
+    if (!verdict.allowed) return { denied: true, timedOut: verdict.timedOut };
 
     let body: Uint8Array;
     try {
@@ -362,9 +375,8 @@ export class ActionContext implements GateContext {
 
   /** 不经导航的下载（`<a download>` 等）：逐次确认 → 页面里带登录态重新取 → 送回 Chat 存成交付文件。 */
   private async handleDownload(s: TabSession, d: DownloadSeen): Promise<DownloadOutcome> {
-    if (!await this.confirmDownload(s, d.url, d.filename, d.size, d.contentType)) {
-      return { denied: true };
-    }
+    const verdict = await this.confirmDownload(s, d.url, d.filename, d.size, d.contentType);
+    if (!verdict.allowed) return { denied: true, timedOut: verdict.timedOut };
 
     if (!this.services.transport()) {
       return { failed: DOWNLOAD_NOT_CONNECTED };

@@ -166,6 +166,14 @@ describe('TabRegistry', () => {
     expect(ops.closed).toEqual([]);
   });
 
+  it('对话先请求读取但没有当前页时，随后共享的页成为当前页', async () => {
+    const reg = new TabRegistry(new MemoryKV(), new FakeTabs());
+    await reg.touch('c1');
+    expect(await reg.active('c1')).toBeNull();
+    expect(await reg.share(77)).toBe('c1');
+    expect(await reg.active('c1')).toBe(77);
+  });
+
   it('「将共享给」：最近用过浏览器的对话及其标题（可为空）；没有时是下一个对话', async () => {
     const reg = new TabRegistry(new MemoryKV(), new FakeTabs());
     expect(await reg.shareTarget()).toEqual({ kind: 'next' });

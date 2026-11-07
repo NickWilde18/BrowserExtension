@@ -2,6 +2,8 @@
 
 declare const __PLATFORM_ORIGIN__: string;
 declare const __TEST_HOOKS__: boolean;
+declare const __EXECUTION_BACKEND__: 'auto' | 'dom';
+export const EXECUTION_BACKEND = __EXECUTION_BACKEND__;
 
 /** 平台对外地址（用户地址栏里那个）。插件只知道这一个地址。 */
 export const PLATFORM_ORIGIN: string = __PLATFORM_ORIGIN__;

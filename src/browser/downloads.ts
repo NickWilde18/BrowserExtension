@@ -80,14 +80,14 @@ export class DownloadWatcher {
   private readonly listener = (item: chrome.downloads.DownloadItem) => { void this.onCreated(item); };
 
   constructor(private readonly hooks: DownloadHooks) {
-    chrome.downloads.onCreated.addListener(this.listener);
+    chrome.downloads?.onCreated?.addListener(this.listener);
   }
 
   dispose(): void {
     this.disposed = true;
     this.armed.clear();
     this.hints = [];
-    chrome.downloads.onCreated.removeListener(this.listener);
+    chrome.downloads?.onCreated?.removeListener(this.listener);
   }
 
   /** 动作开始时登记：这个标签页里出现的下载交给 onDownload。返回撤销登记。 */

@@ -156,7 +156,7 @@ test('站点授权：总是允许，换对话也不问；弹窗里能撤销', as
   await expect.poll(async () => (await h.sw.evaluate(() => (globalThis as any).__bxTest.popupState())).sites.always).toEqual([]);
 });
 
-test('站点授权：拒绝不开标签；超时按拒绝', async () => {
+test('站点授权：拒绝不开标签；超时回 approval_timeout', async () => {
   h = await launch();
   const id = await send(h, 'open', { url: `${A}/form.html` });
   await answer(h, 'Deny');
@@ -167,7 +167,7 @@ test('站点授权：拒绝不开标签；超时按拒绝', async () => {
   const slow = await send(h, 'open', { url: `${A}/form.html` }, { authWaitMs: 1500 });
   await approvalWindow(h);
   const t = await result(h, slow);
-  expect(t.code).toBe('user_denied');
+  expect(t.code).toBe('approval_timeout');
   expect(t.message).toContain('in time');
   await expect.poll(() => h.ctx.pages().filter((p) => p.url().includes('/approval.html')).length).toBe(0);
 });

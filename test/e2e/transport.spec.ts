@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CHAT_PORT } from './global-setup';
+import { ACTIONS } from '../../src/protocol/frames';
 import { A, CONV, answer, refOf } from './helpers';
 import type { Harness } from './helpers';
 
@@ -93,7 +94,7 @@ test('没登录时连不上（401，等登录）；在平台网页登录后连�
   expect(s).toMatchObject({ state: 'connected', account: 'first.user@example.test' });
 
   const st = await ctl('state');
-  expect(st.hellos.at(-1)).toMatchObject({ type: 'hello', protocol: 1 });
+  expect(st.hellos.at(-1)).toMatchObject({ type: 'hello', protocol: 1, capabilities: { actions: [...ACTIONS] } });
   expect(st.hellos.at(-1).install_id).toMatch(/^[0-9a-f-]{36}$/);
 });
 

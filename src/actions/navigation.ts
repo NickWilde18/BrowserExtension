@@ -165,6 +165,10 @@ export async function downloadsPayload(ctx: ActionContext): Promise<Record<strin
   if (outcomes.some((o) => o.denied)) {
     payload.download_denied = true;
   }
+  if (outcomes.some((o) => o.timedOut)) {
+    payload.download_timed_out = true;
+    ctx.notes.push('Download confirmation timed out. The action may already have taken effect; do not repeat it automatically.');
+  }
 
   const err = outcomes.find((o) => o.error)?.error;
   if (err) {

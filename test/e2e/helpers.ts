@@ -35,14 +35,14 @@ export interface Harness {
 }
 
 /** 起一个装好插件的浏览器（持久化上下文），连上假 Chat（回 ready），审批默认回 ask_user。 */
-export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean; realViewport?: boolean } = {}): Promise<Harness> {
+export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean; realViewport?: boolean; extensionDir?: string } = {}): Promise<Harness> {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bx-e2e-'));
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: opts.headless ?? true,
     // realViewport：不做 Playwright 的视口模拟，页面用真实窗口尺寸（与用户的浏览器一致）。
     viewport: opts.realViewport ? null : { width: 1200, height: 800 },
-    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`],
+    args: [`--disable-extensions-except=${opts.extensionDir ?? EXT_DIR}`, `--load-extension=${opts.extensionDir ?? EXT_DIR}`],
   });
 
   // Playwright 自己也连着每个标签页：没有 dialog 监听时它会自动关掉对话框（它的默认行为），插件就看不到

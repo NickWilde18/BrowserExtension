@@ -73,7 +73,7 @@ export async function upload(ctx: ActionContext, a: UploadArgs): Promise<ActionO
   });
   if (r.result !== 'allow') {
     ctx.throwIfAborted();
-    throw new ActionError('user_denied', r.result === 'deny' && r.why === 'timeout'
+    throw new ActionError(r.result === 'deny' && r.why === 'timeout' ? 'approval_timeout' : 'user_denied', r.result === 'deny' && r.why === 'timeout'
       ? 'The user did not answer in time whether the assistant may upload the files.'
       : 'The user did not allow the upload.');
   }

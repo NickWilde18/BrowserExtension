@@ -6,7 +6,7 @@
 import type { ShareTarget } from './browser/tabs';
 import type { ControlMode } from './browser/control';
 import type { ConnectionState } from './connection/manager';
-import type { ApprovalKind } from './protocol/frames';
+import type { ActionName, ApprovalKind } from './protocol/frames';
 
 /** 确认小窗里的答复。 */
 export type PromptAnswer =
@@ -38,6 +38,7 @@ export interface PromptView {
 
 export interface PopupState {
   connection: ConnectionState;
+  supportedActions: ActionName[];
   account?: string;
   lastError?: string;
   displayName: string;

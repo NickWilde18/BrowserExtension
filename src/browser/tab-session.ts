@@ -333,7 +333,17 @@ export class TabSession {
       return;
     }
 
-    const [w, h] = await this.call<[number, number]>(this.mainFrameId, 'viewportSize');
+    // 尺寸探测不初始化交互代理：首次安装其捕获监听器会影响紧随其后的原生输入投递。
+    const world = await this.cdp.send<{ executionContextId: number }>('Page.createIsolatedWorld', {
+      frameId: this.mainFrameId, worldName: WORLD_NAME, grantUniveralAccess: false,
+    });
+    const measured = await this.cdp.send<{ result: { value?: [number, number] }; exceptionDetails?: unknown }>('Runtime.evaluate', {
+      contextId: world.executionContextId, expression: '[window.innerWidth, window.innerHeight]', returnByValue: true,
+    });
+    if (measured.exceptionDetails || !Array.isArray(measured.result.value)) {
+      throw new ActionError('action_failed', 'The page viewport could not be measured.');
+    }
+    const [w, h] = measured.result.value;
     if (w > 0 && h > 0) {
       return;
     }

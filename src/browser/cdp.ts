@@ -22,6 +22,7 @@ let installed = false;
 /** 注册全局的事件与断开回调（后台启动时调一次）。 */
 export function installCdp(onDetach: (tabId: number, reason: DetachReason) => void): void {
   detachHandler = onDetach;
+  if (!chrome.debugger?.onEvent || !chrome.debugger?.onDetach) return;
   if (installed) {
     return;
   }

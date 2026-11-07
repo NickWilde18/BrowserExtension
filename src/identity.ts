@@ -6,7 +6,7 @@
 
 import { PROTOCOL_VERSION } from './config';
 import { isUUID } from './protocol/frames';
-import type { HelloFrame } from './protocol/frames';
+import type { ActionName, HelloFrame } from './protocol/frames';
 import type { KV } from './storage';
 
 const INSTALL_ID_KEY = 'identity.installId';
@@ -89,13 +89,14 @@ export class Identity {
     return true;
   }
 
-  async hello(): Promise<HelloFrame> {
+  async hello(actions?: readonly ActionName[]): Promise<HelloFrame> {
     return {
       type: 'hello',
       protocol: PROTOCOL_VERSION,
       install_id: await this.installId(),
       display_name: (normalizeDisplayName(await this.displayName()) ?? 'Browser'),
       extension_version: chrome.runtime.getManifest().version.slice(0, 32),
+      ...(actions !== undefined ? { capabilities: { actions: [...actions] } } : {}),
     };
   }
 }

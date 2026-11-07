@@ -3,3 +3,6 @@ declare module 'virtual:injected-source' {
   export const INJECTED_SOURCE: string;
   export const INJECTED_VERSION: string;
 }
+declare module 'virtual:injected-runtime' {
+  export const InjectedScript: new (world: typeof globalThis, options: Record<string, unknown>) => any;
+}

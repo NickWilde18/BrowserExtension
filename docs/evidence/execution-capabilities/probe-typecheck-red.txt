@@ -1,0 +1,16 @@
+$ tsc --noEmit -p tsconfig.json
+test/probe/dom-extension-probe.ts(36,40): error TS18046: 'unsupported' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(41,29): error TS18046: 'read' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(42,23): error TS18046: 'read' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(43,25): error TS18046: 'read' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(47,30): error TS18046: 'subtree' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(58,37): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(58,59): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(59,13): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(59,40): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(60,33): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(61,29): error TS18046: 'framed' is of type 'unknown'.
+test/probe/dom-extension-probe.ts(62,32): error TS18046: 'framed' is of type 'unknown'.
+[ELIFECYCLE] Command failed with exit code 1.
+
+[exited with code 0]
