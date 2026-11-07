@@ -55,6 +55,7 @@
   "approvalTitlePassword": { "message": "助手要往密码框里输入" },
   "approvalPasswordBody": { "message": "助手要在下面的站点往这个字段输入密码（内容来自你在对话里告诉它的）。你也可以自己输入。" },
   "approvalField": { "message": "字段" },
+  "approvalFile": { "message": "文件" },
   "selfType": { "message": "我自己输入" },
   "selfTypeBody": { "message": "已把光标放进那个字段，请切到那个标签自己输入，输完点「完成」。" },
   "done": { "message": "完成" },

@@ -223,6 +223,8 @@ test('下载：允许后存成交付文件、不进下载目录；拒绝回 down
   const id = await send(h, 'click', { element: 'Get the report', ref: refOf(snap, 'Get the report') });
   const win = await approvalWindow(h);
   expect(await win.locator('#detail').textContent()).toContain('report-2026.txt');
+  // 文件那一行带「文件」标签，和上传、密码框的「字段」一样，不是光一个冒号。
+  expect(await win.locator('#detail strong').textContent()).toBe('File：');
   await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');

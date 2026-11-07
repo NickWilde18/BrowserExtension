@@ -55,6 +55,7 @@
   "approvalTitlePassword": { "message": "The assistant wants to type a password" },
   "approvalPasswordBody": { "message": "The assistant wants to type a password into this field on the site below (the value is what you told it in the conversation). You can type it yourself instead." },
   "approvalField": { "message": "Field" },
+  "approvalFile": { "message": "File" },
   "selfType": { "message": "I'll type it" },
   "selfTypeBody": { "message": "The cursor is in that field. Switch to the tab, type the password yourself, then click Done." },
   "done": { "message": "Done" },

@@ -90,7 +90,7 @@ function renderDetail(view: PromptView): void {
       break;
     }
     case 'download':
-      box.append(line('', `${String(d.filename ?? '')}（${humanSize(d.size)}${d.content_type ? `，${String(d.content_type)}` : ''}）`));
+      box.append(line(t('approvalFile'), `${String(d.filename ?? '')}（${humanSize(d.size)}${d.content_type ? `，${String(d.content_type)}` : ''}）`));
       break;
     case 'script': {
       const pre = document.createElement('pre');
