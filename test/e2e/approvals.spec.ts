@@ -30,8 +30,8 @@ test('确认窗：产品身份、页面标题和图标明确，默认键盘焦�
   h = await launch({ realViewport: true });
   const pending = call(h, 'open', { url: `${A}/form.html` }, { title: '课程 <b>报名</b>' });
   const win = await approvalWindow(h);
-  await expect(win).toHaveTitle(/Let the assistant use this site\? · AI Service Browser Assistant/);
-  await expect(win.locator('header')).toContainText('AI Service Browser Assistant');
+  await expect(win).toHaveTitle(/Allow the assistant to access this site\? · AI Services Platform/);
+  await expect(win.locator('header')).toContainText('AI Services Platform');
   expect(await win.locator('header img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   const icon = await win.locator('link[rel="icon"]').getAttribute('href');
   expect(icon).toBeTruthy();
@@ -39,7 +39,7 @@ test('确认窗：产品身份、页面标题和图标明确，默认键盘焦�
   await expect(win.locator('#site')).toHaveText(A);
   await expect(win.locator('#conversation')).toHaveText('课程 <b>报名</b>');
   expect(await win.locator('#conversation').innerHTML()).not.toContain('<b>');
-  await expect(win.getByRole('button', { name: 'Deny', exact: true })).toBeFocused();
+  await expect(win.getByRole('button', { name: 'Decline', exact: true })).toBeFocused();
   await actOnPrompt(win, () => win.keyboard.press('Enter'));
   expect((await pending).code).toBe('user_denied');
 });
@@ -53,7 +53,7 @@ for (const closeBy of ['button', 'Escape'] as const) {
     const win = await approvalWindow(h);
     await expect(win.locator('#conversationRow')).toBeHidden();
     if (closeBy === 'button') {
-      await actOnPrompt(win, () => win.getByRole('button', { name: 'Close and deny this request' }).click({ timeout: 2000 }));
+      await actOnPrompt(win, () => win.getByRole('button', { name: 'Close and decline this request' }).click({ timeout: 2000 }));
     } else {
       await actOnPrompt(win, () => win.keyboard.press('Escape'));
     }
@@ -70,20 +70,22 @@ test('确认窗：短内容收紧窗口，长脚本可滚动阅读且按钮始�
   const id = await send(h, 'open', { url: `${A}/form.html` });
   const win = await approvalWindow(h);
   await expect.poll(() => win.evaluate(() => innerHeight - document.querySelector('main')!.getBoundingClientRect().height)).toBeLessThan(40);
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   expect((await result(h, id)).outcome).toBe('ok');
 
   const source = `() => {\n${'  // Read this line before deciding.\n'.repeat(80)}  return 1;\n}`;
   const script = await send(h, 'evaluate', { function: source });
   const long = await approvalWindow(h);
   await expect(long.locator('pre')).toHaveText(source);
+  await expect(long.locator('#scriptBox')).not.toHaveAttribute('open');
+  await long.locator('#scriptBox summary').click();
   const code = long.getByRole('region', { name: 'Script to run' });
   await expect(code).toHaveAttribute('tabindex', '0');
   expect(await code.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await code.focus();
   await long.keyboard.press('Control+End');
   await expect.poll(() => code.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-  const deny = long.getByRole('button', { name: 'Deny', exact: true });
+  const deny = long.getByRole('button', { name: 'Decline', exact: true });
   await deny.focus();
   expect(await deny.evaluate((el) => el.getBoundingClientRect().bottom <= innerHeight)).toBe(true);
   expect(await long.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -109,7 +111,7 @@ test('确认窗：浅深主题均有明确底色与可读文字，窄窗口不�
   expect(colors[1]!.text).not.toBe(colors[0]!.text);
   await win.setViewportSize({ width: 320, height: 560 });
   expect(await win.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   expect((await result(h, id)).code).toBe('user_denied');
 });
 
@@ -118,7 +120,7 @@ test('站点授权：仅本次对话；同一对话不再问，别的对话还�
   const id = await send(h, 'open', { url: `${A}/form.html` });
   const win = await approvalWindow(h);
   expect(await win.locator('#site').textContent()).toBe(A);
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
 
@@ -132,7 +134,7 @@ test('站点授权：仅本次对话；同一对话不再问，别的对话还�
   expect((await sent(h, 'progress')).filter((f) => f.request_id !== id)).toHaveLength(0);
 
   const other = await send(h, 'open', { url: `${A}/form.html` }, { conversation: CONV2 });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   const denied = await result(h, other);
   expect(denied.code).toBe('user_denied');
 });
@@ -159,7 +161,7 @@ test('站点授权：总是允许，换对话也不问；弹窗里能撤销', as
 test('站点授权：拒绝不开标签；超时回 approval_timeout', async () => {
   h = await launch();
   const id = await send(h, 'open', { url: `${A}/form.html` });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   const r = await result(h, id);
   expect(r.code).toBe('user_denied');
   expect((await call(h, 'tabs', { op: 'list' })).payload?.tabs).toEqual([]);
@@ -169,6 +171,9 @@ test('站点授权：拒绝不开标签；超时回 approval_timeout', async () 
   const t = await result(h, slow);
   expect(t.code).toBe('approval_timeout');
   expect(t.message).toContain('in time');
+  const expiredWindow = h.ctx.pages().find((p) => p.url().includes('/approval.html'))!;
+  await expect(expiredWindow.locator('#title')).toHaveText('Confirmation expired');
+  await actOnPrompt(expiredWindow, () => expiredWindow.locator('#buttons button').click());
   await expect.poll(() => h.ctx.pages().filter((p) => p.url().includes('/approval.html')).length).toBe(0);
 });
 
@@ -182,7 +187,7 @@ test('跨站跳转：点链接去没授权的站点先问，拒绝就不跳', as
   const id = await send(h, 'click', { element: 'Other site', ref: refOf(snap, 'Other site') });
   const win = await approvalWindow(h);
   expect(await win.locator('#site').textContent()).toBe(B);
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   const r = await result(h, id);
   expect(r.code, JSON.stringify(r)).toBe('user_denied');
   expect(r.page?.url).toBe(`${A}/crosssite.html`);
@@ -190,7 +195,7 @@ test('跨站跳转：点链接去没授权的站点先问，拒绝就不跳', as
   expect(await landingHitsOnB()).toBe(0);
 
   const id2 = await send(h, 'click', { element: 'Other site', ref: refOf(snap, 'Other site') });
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   const ok = await result(h, id2);
   expect(ok.outcome, JSON.stringify(ok)).toBe('ok');
   expect(ok.page?.url).toBe(`${B}/landing.html`);
@@ -205,7 +210,7 @@ test('跨站跳转：同站链接重定向到别的站点也拦', async () => {
   const id = await send(h, 'click', { element: 'Redirect away', ref: refOf(snap, 'Redirect away') });
   const win = await approvalWindow(h);
   expect(await win.locator('#site').textContent()).toBe(B);
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   const r = await result(h, id);
   expect(r.code).toBe('user_denied');
   expect(r.page?.url).toBe(`${A}/crosssite.html`);
@@ -222,7 +227,7 @@ test('密码框：允许 / 我自己输入 / 拒绝', async () => {
 
   const id = await send(h, 'type', { element: 'Password', ref: pw, text: 's3cret' });
   const win = await approvalWindow(h);
-  expect(await win.locator('#detail').textContent()).toContain('Password');
+  expect(await win.locator('#facts').textContent()).toContain('Password');
   await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
@@ -234,18 +239,18 @@ test('密码框：允许 / 我自己输入 / 拒绝', async () => {
   expect(JSON.stringify(ar)).not.toContain('s3cret');
 
   const self = await send(h, 'type', { element: 'Password', ref: pw, text: 'ignored' });
-  await answer(h, "I'll type it");
+  await answer(h, 'Enter it myself');
   const w2 = await approvalWindow(h);
-  await w2.locator('#buttons button', { hasText: 'Done' }).waitFor();
+  await w2.locator('#buttons button', { hasText: 'Input complete' }).waitFor();
   await page.locator('#pw').fill('typed-by-user');
-  await w2.locator('#buttons button', { hasText: 'Done' }).click();
+  await actOnPrompt(w2, () => w2.locator('#buttons button', { hasText: 'Input complete' }).click());
   const sr = await result(h, self);
   expect(sr.outcome, JSON.stringify(sr)).toBe('ok');
   expect(sr.message).toContain('themselves');
   expect(await page.locator('#pw').inputValue()).toBe('typed-by-user');
 
   const no = await send(h, 'type', { element: 'Password', ref: pw, text: 'nope' });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   expect((await result(h, no)).code).toBe('user_denied');
   expect(await page.locator('#pw').inputValue()).toBe('typed-by-user');
 });
@@ -272,7 +277,7 @@ test('上传：可见的文件框、藏在按钮后面的文件框；拒绝不�
     files: [{ token: 't1', name: '报告.pdf', size: 2000, content_type: 'application/pdf' }, { token: 't2', name: 'a.txt', size: 2, content_type: 'text/plain' }],
   });
   const win = await approvalWindow(h);
-  expect(await win.locator('#detail').textContent()).toContain('报告.pdf');
+  expect(await win.locator('#facts').textContent()).toContain('报告.pdf');
   await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
@@ -296,7 +301,7 @@ test('上传：可见的文件框、藏在按钮后面的文件框；拒绝不�
     element: 'Attachment', ref: refOf(snap, 'Attachment'),
     files: [{ token: 't4', name: 'x.txt', size: 1, content_type: 'text/plain' }],
   });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   expect((await result(h, no)).code).toBe('user_denied');
   expect(await page.locator('#out').textContent()).not.toContain('x.txt');
 });
@@ -309,9 +314,10 @@ test('下载：允许后存成交付文件、不进下载目录；拒绝回 down
 
   const id = await send(h, 'click', { element: 'Get the report', ref: refOf(snap, 'Get the report') });
   const win = await approvalWindow(h);
-  expect(await win.locator('#detail').textContent()).toContain('report-2026.txt');
-  // 文件区仍有可见标题，并能按无障碍名称识别，文件名与大小清楚分行。
-  await expect(win.locator('#detail').getByRole('heading', { name: 'File', exact: true })).toBeVisible({ timeout: 2000 });
+  expect(await win.locator('#facts').textContent()).toContain('report-2026.txt');
+  // 文件区有可见的小标签，列表能按无障碍名称识别，文件名与大小清楚分行；写明文件交给对话、不进下载目录。
+  await expect(win.locator('#facts .label', { hasText: 'File' })).toBeVisible({ timeout: 2000 });
+  await expect(win.locator('#facts')).toContainText('not to your downloads folder');
   await expect(win.getByRole('list', { name: 'File', exact: true })).toContainText('26 B · text/plain');
   await answer(h, 'Allow');
   const r = await result(h, id);
@@ -324,7 +330,7 @@ test('下载：允许后存成交付文件、不进下载目录；拒绝回 down
   expect(left).toHaveLength(0);
 
   const id2 = await send(h, 'click', { element: 'Get the table', ref: refOf(snap, 'Get the table') });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   const d = await result(h, id2);
   expect(d.outcome, JSON.stringify(d)).toBe('ok');
   expect(d.payload?.download_denied).toBe(true);
@@ -388,7 +394,7 @@ test('脚本：每次确认，显示全文；允许后在页面主世界执行�
   expect(e.message).toContain('boom');
 
   const id4 = await send(h, 'evaluate', { function: '() => 1' });
-  await answer(h, 'Deny');
+  await answer(h, 'Decline');
   expect((await result(h, id4)).code).toBe('user_denied');
 });
 
@@ -409,7 +415,7 @@ test('Auto Mode：审查拦下时小窗显示理由，由用户定', async () =>
   const win = await approvalWindow(h);
   await expect(win.locator('#review')).toBeVisible();
   expect(await win.locator('#reviewReason').textContent()).toBe('test reason');
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   expect((await result(h, id)).outcome).toBe('ok');
 });
 
@@ -417,7 +423,7 @@ test('Auto Mode：开关关掉不发审批请求，直接问用户', async () =>
   h = await launch({ autoApproval: 'allow' });
   await h.sw.evaluate(() => (globalThis as any).__bxTest.setAutoMode(false));
   const id = await send(h, 'open', { url: `${A}/form.html` });
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   expect((await result(h, id)).outcome).toBe('ok');
   expect(await sent(h, 'approval_request')).toHaveLength(0);
 });
@@ -429,7 +435,7 @@ test('Auto Mode：Chat 迟迟不回审批，15 秒后回到小窗', async () => 
   const t0 = Date.now();
   await approvalWindow(h);
   expect(Date.now() - t0).toBeGreaterThan(14_000);
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   expect((await result(h, id)).outcome).toBe('ok');
 });
 

@@ -21,6 +21,8 @@ export function serverHostPermission(origin: string): string {
 export interface RuntimeSession {
   readonly epoch: string;
   start(): void;
+  /** 新平台握手是否可达；要求登录也算可达。只有切服事务等待它，初次启动仍在后台连接。 */
+  waitForConnection(): Promise<boolean>;
   dispose(): Promise<void>;
 }
 
@@ -57,6 +59,8 @@ export class ServerSettings<T extends RuntimeSession> {
       this.runtime.start();
       return { ok: true };
     }
+    const previousOrigin = this.origin;
+    let targetStarted = false;
     this.switching = true;
     this.needsReset = true;
     try {
@@ -68,14 +72,34 @@ export class ServerSettings<T extends RuntimeSession> {
       if (!(await disposed).ok) throw new Error('dispose_failed');
       await this.options.clear();
       await this.options.local.set(ORIGIN_KEY, origin);
-      await this.options.local.remove(PENDING_KEY);
       this.origin = origin;
       this.permissionGranted = true;
       this.runtime = this.options.create(origin);
-      this.needsReset = false;
+      targetStarted = true;
       this.runtime.start();
+      if (!await this.runtime.waitForConnection()) throw new Error('connection_failed');
+      await this.options.local.remove(PENDING_KEY);
+      this.needsReset = false;
       return { ok: true };
     } catch {
+      if (targetStarted) {
+        try {
+          // 新平台已启动但未握手成功：销毁其运行期并恢复原地址。授权、共享和接管状态不复原。
+          await this.runtime!.dispose();
+          await this.options.local.set(PENDING_KEY, previousOrigin);
+          await this.options.clear();
+          await this.options.local.set(ORIGIN_KEY, previousOrigin);
+          await this.options.local.remove(PENDING_KEY);
+          this.origin = previousOrigin;
+          this.permissionGranted = await this.options.hasPermission(previousOrigin);
+          this.runtime = this.options.create(previousOrigin);
+          this.needsReset = false;
+          if (this.permissionGranted) this.runtime.start();
+          return { ok: false, error: 'rolled_back' };
+        } catch {
+          // 存储/清理失败仍保留事务，让下次启动完成恢复；不能向界面宣称已回退。
+        }
+      }
       return { ok: false, error: 'switch_failed' };
     } finally {
       this.switching = false;

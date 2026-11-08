@@ -28,11 +28,15 @@ export interface PromptView {
   site: string;
   /** 发起请求的对话标题；没有标题时不展示来源行。 */
   conversationTitle?: string;
-  /** 按种类：download 有 filename/size/content_type，script 有 source，password 有 field，upload 有 field/files。 */
+  /**
+   * 按种类：download 有 filename/size/content_type，script 有 source，password 有 field，upload 有 field/files；
+   * site 在页面要跳到别的站点时有 from（当前站点），只给确认窗显示，不发给 Chat。
+   */
   detail: Record<string, unknown>;
   /** 自动审查拦下时的理由。 */
   reason?: string;
-  stage: 'choose' | 'self_wait';
+  /** expired：到时没答，窗口留着显示「确认已过期，请查看页面」，不再收答复。 */
+  stage: 'choose' | 'self_wait' | 'expired';
   expiresAt: number;
 }
 
@@ -46,6 +50,10 @@ export interface PopupState {
   stopped: boolean;
   introSeen: boolean;
   sites: { always: string[]; conversation: string[] };
+  /** 弹窗展示用的授权归属；只从当前运行期与本地授权拼装，不保存额外网址。 */
+  siteGroups: Array<{ site: string; grants: Array<{ scope: 'always' | 'current' | 'conversation'; title: string }> }>;
+  pageSite: string | null;
+  pageOwner: { title: string; assistantOpened: boolean } | null;
   /** 当前标签页能不能共享（普通网页、还没被 AI 用着）。 */
   canShare: boolean;
   /** 当前标签页已经共享给某个对话。 */

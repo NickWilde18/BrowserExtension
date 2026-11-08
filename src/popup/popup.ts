@@ -1,346 +1,311 @@
-// 插件弹窗：连接状态、当前账号、显示名、Auto Mode 开关、共享此页、停止 / 恢复、已授权站点、首次连接说明。
-
+// 插件弹窗（设计状态集07）：连接、当前页面、站点授权归属、逐对话继续与全局停止、高级设置。
+// 所有来自页面/对话的标题和站点均按纯文本显示。页头和停止入口固定，中间独立滚动。
 import type { PageMessage, PopupState } from '../messages';
+import { PLATFORM_ORIGIN } from '../config';
 
 const t = (key: string, subs?: string[]): string => chrome.i18n.getMessage(key, subs) || key;
-
-function send<T>(msg: PageMessage): Promise<T> {
-  return chrome.runtime.sendMessage(msg) as Promise<T>;
-}
-
+const send = <T>(msg: PageMessage): Promise<T> => chrome.runtime.sendMessage(msg) as Promise<T>;
 function $(id: string): HTMLElement {
   const el = document.getElementById(id);
-  if (!el) {
-    throw new Error(`missing #${id}`);
-  }
-
+  if (!el) throw new Error(`missing #${id}`);
   return el;
 }
+const button = (id: string) => $(id) as HTMLButtonElement;
+let latest: PopupState | null = null;
+let view = 'home';
+let editingName = false;
+let busy = false;
+let serverStage: 'draft' | 'permission' | 'confirm' = 'draft';
+let serverDraftDirty = false;
+let candidate: URL | null = null;
+let permissionEpoch = '';
+let controlledSignature = '';
+let siteSignature = '';
 
-function applyI18n(): void {
-  for (const el of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
-    el.textContent = t(el.dataset.i18n ?? '');
+function show(next: string): void {
+  view = next;
+  for (const name of ['home', 'settings', 'about']) $(`${name}View`).hidden = name !== next;
+  document.querySelector('main')!.scrollTop = 0;
+  if (next === 'settings' && latest) $('currentOrigin').textContent = latest.serverOrigin;
+}
+function openPlatform(): void {
+  if (latest) void chrome.tabs.create({ url: latest.serverOrigin });
+}
+function feedback(key: string, error = false): void {
+  const el = $('serverError');
+  el.textContent = t(key);
+  el.hidden = false;
+  el.dataset.error = String(error);
+}
+function resetServerStage(): void {
+  serverStage = 'draft';
+  candidate = null;
+  $('switchConfirmation').hidden = true;
+  $('cancelSwitch').hidden = true;
+  $('serverError').hidden = true;
+  button('saveServer').textContent = t('settingsNext');
+}
+function normalizeServerOrigin(value: string): URL | null {
+  const raw = value.trim();
+  if (!/^https?:\/\/[^/?#\\\s@]+\/?$/i.test(raw)) return null;
+  try {
+    const url = new URL(raw);
+    return ['http:', 'https:'].includes(url.protocol) && url.hostname !== '' && url.username === ''
+      && url.pathname === '/' && url.search === '' && url.hash === '' ? url : null;
+  } catch { return null; }
+}
+function updateServerSettings(): void {
+  const input = $('serverOrigin') as HTMLInputElement;
+  if (latest && !serverDraftDirty && !busy && document.activeElement !== input) input.value = latest.serverOrigin;
+  $('currentOrigin').textContent = latest?.serverOrigin ?? '';
+  input.disabled = busy || serverStage !== 'draft' || latest?.serverSwitching === true;
+  button('saveServer').disabled = !latest || busy || latest.serverSwitching;
+  button('restoreDefault').disabled = busy;
+  $('serverPermissionHint').hidden = serverStage !== 'permission';
+}
+async function advanceServer(): Promise<void> {
+  if (!latest || busy || latest.serverSwitching) return;
+  const input = $('serverOrigin') as HTMLInputElement;
+  if (serverStage === 'draft') {
+    candidate = normalizeServerOrigin(input.value);
+    input.setAttribute('aria-invalid', String(!candidate));
+    if (!candidate) { feedback('serverInvalidOrigin', true); return; }
+    permissionEpoch = latest.serverEpoch;
+    serverStage = 'permission';
+    button('saveServer').textContent = t('settingsContinue');
+    $('cancelSwitch').hidden = false;
+    $('serverError').hidden = true;
+    updateServerSettings();
+    return;
+  }
+  if (!candidate) return;
+  if (serverStage === 'permission') {
+    // 此处直接从真实点击申请，不在申请前异步取 state，以保留浏览器要求的用户手势。
+    busy = true;
+    updateServerSettings();
+    try {
+      const granted = await chrome.permissions.request({ origins: [`${candidate.protocol}//${candidate.hostname}/*`] });
+      if (!granted) { feedback('serverPermissionDenied', true); return; }
+      serverStage = 'confirm';
+      $('switchConfirmation').hidden = false;
+      button('saveServer').textContent = t('settingsConfirm');
+    } catch { feedback('serverPermissionDenied', true); }
+    finally { busy = false; updateServerSettings(); }
+    return;
+  }
+  busy = true;
+  feedback('serverSwitching');
+  button('cancelSwitch').disabled = true;
+  updateServerSettings();
+  try {
+    const result = await send<{ ok: boolean; error?: string }>({ type: 'popup:setServer', origin: candidate.origin, epoch: permissionEpoch });
+    if (result?.ok) {
+      serverDraftDirty = false;
+      resetServerStage();
+      feedback('serverSaved');
+    } else if (result?.error === 'rolled_back') {
+      resetServerStage();
+      serverDraftDirty = false;
+      feedback('serverRolledBack', true);
+    } else feedback('serverSaveFailed', true);
+  } catch { feedback('serverSaveFailed', true); }
+  finally {
+    busy = false;
+    button('cancelSwitch').disabled = false;
+    await render();
+    updateServerSettings();
   }
 }
 
-const RECONNECTABLE = new Set(['replaced', 'error', 'offline', 'waiting_login']);
-
-type ServerState = Pick<PopupState,
-  'serverOrigin' | 'serverEpoch' | 'serverSwitching' | 'serverPermissionGranted'>;
-let latestServerState: ServerState | null = null;
-let latestControlState: Pick<PopupState, 'controlOrigin' | 'controlTabId' | 'serverEpoch'> | null = null;
-let serverDraftDirty = false;
-let serverSaving = false;
-let serverFeedback: { key: string; error: boolean } | null = null;
-let controlledSignature = '';
-
-function renderControlledConversations(st: PopupState): void {
-  const signature = JSON.stringify([st.serverEpoch, st.controlledConversations, st.serverSwitching]);
+function renderControlled(st: PopupState): void {
+  const signature = JSON.stringify([st.serverEpoch, st.controlledConversations, st.serverSwitching, st.stopped]);
   if (signature === controlledSignature) return;
   controlledSignature = signature;
   $('controlledSection').hidden = st.controlledConversations.length === 0;
-  const items = st.controlledConversations.map((entry) => {
+  $('controlledConversations').replaceChildren(...st.controlledConversations.map((entry) => {
     const item = document.createElement('li');
     const title = document.createElement('span');
-    title.textContent = entry.title;
+    title.textContent = entry.title || t('controlUntitled');
+    title.title = title.textContent;
     item.append(title);
     if (entry.mode === 'user') {
-      const button = document.createElement('button');
-      button.textContent = t('controlResume');
-      button.disabled = st.serverSwitching;
-      button.addEventListener('click', async () => {
-        button.disabled = true;
+      const resume = document.createElement('button');
+      resume.textContent = t('controlResume');
+      resume.disabled = st.stopped || st.serverSwitching;
+      resume.addEventListener('click', async () => {
+        resume.disabled = true;
         try {
           const result = await send<{ ok: boolean }>({ type: 'popup:resumeConversation', conversation: entry.conversation, epoch: st.serverEpoch });
           if (!result?.ok) throw new Error('unavailable');
           await render();
         } catch {
-          button.disabled = false;
+          resume.disabled = st.stopped;
           const note = document.createElement('span');
           note.textContent = t('controlUnavailable');
           item.append(note);
         }
       });
-      item.append(button);
+      item.append(resume);
     } else {
       const mode = document.createElement('span');
       mode.textContent = t(entry.mode === 'observing' ? 'controlObserve' : 'controlTaking');
       item.append(mode);
     }
     return item;
-  });
-  $('controlledConversations').replaceChildren(...items);
+  }));
 }
-
-function normalizeServerOrigin(value: string): URL | null {
-  // 只接收来源地址；不默默剥掉路径或凭据，也不让 URL 的宽松解析接收反斜杠等输入。
-  const candidate = value.trim();
-  if (!/^https?:\/\/[^/?#\\\s@]+\/?$/i.test(candidate)) {
-    return null;
-  }
-
-  try {
-    const url = new URL(candidate);
-    return (url.protocol === 'http:' || url.protocol === 'https:')
-      && url.hostname !== '' && url.username === ''
-      && url.pathname === '/' && url.search === '' && url.hash === '' ? url : null;
-  } catch {
-    return null;
-  }
+function filterSites(): void {
+  const value = ($('siteFilter') as HTMLInputElement).value.toLowerCase();
+  for (const li of $('sites').querySelectorAll<HTMLElement>('[data-site]')) li.hidden = !li.dataset.site!.toLowerCase().includes(value);
 }
-
-function updateServerSettings(): void {
-  if (!($('advanced') as HTMLDetailsElement).open) {
-    return;
-  }
-
-  const input = $('serverOrigin') as HTMLInputElement;
-  const snapshot = latestServerState;
-  if (snapshot && !serverDraftDirty && !serverSaving && document.activeElement !== input) {
-    input.value = snapshot.serverOrigin;
-  }
-
-  const switching = snapshot?.serverSwitching === true;
-  input.disabled = serverSaving || switching;
-  ($('saveServer') as HTMLButtonElement).disabled = !snapshot || serverSaving || switching;
-  $('serverPermissionHint').hidden = !snapshot || snapshot.serverPermissionGranted;
-  const feedback = serverSaving ? serverFeedback
-    : switching ? { key: 'serverSwitching', error: false } : serverFeedback;
-  const status = $('serverError');
-  status.hidden = !feedback;
-  status.textContent = feedback ? t(feedback.key) : '';
-  status.dataset.error = String(feedback?.error === true);
-  input.setAttribute('aria-invalid', String(feedback?.key === 'serverInvalidOrigin'));
-}
-
-function wireServerSettings(): void {
-  $('advanced').addEventListener('toggle', () => {
-    if (($('advanced') as HTMLDetailsElement).open) {
-      updateServerSettings();
-      void render();
+function renderSites(st: PopupState): void {
+  const groups = st.siteGroups;
+  const signature = JSON.stringify([st.serverEpoch, groups]);
+  if (signature === siteSignature) return;
+  siteSignature = signature;
+  $('siteCount').textContent = String(groups.length);
+  $('sitesNone').hidden = groups.length !== 0;
+  $('siteFilter').hidden = groups.length <= 5;
+  $('sites').setAttribute('aria-label', t('sites'));
+  $('sites').replaceChildren(...groups.map((group) => {
+    const li = document.createElement('li');
+    li.className = 'site-group';
+    li.dataset.site = group.site;
+    const heading = document.createElement('div');
+    heading.className = 'site-heading';
+    const name = document.createElement('span');
+    name.className = 'site';
+    // 只展示站点主机，长域名自然换行。
+    try { name.textContent = new URL(group.site).host; } catch { name.textContent = group.site; }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'link';
+    remove.textContent = t('revoke');
+    remove.setAttribute('aria-label', `${t('revoke')} ${name.textContent}`);
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      try { await send({ type: 'popup:revokeSite', site: group.site }); await render(); }
+      finally { remove.disabled = false; }
+    });
+    heading.append(name, remove);
+    li.append(heading);
+    for (const grant of group.grants) {
+      const row = document.createElement('div');
+      row.className = 'grant-row';
+      const badge = document.createElement('span');
+      badge.className = grant.scope === 'always' ? 'scope persistent' : 'scope';
+      badge.textContent = t(grant.scope === 'always' ? 'sitesAlways' : grant.scope === 'current' ? 'sitesCurrent' : 'sitesOther');
+      const owner = document.createElement('div');
+      owner.className = 'grant-owner';
+      owner.textContent = grant.scope === 'always' ? t('sitesAllConversations') : grant.title || t('controlUntitled');
+      row.append(badge, owner);
+      li.append(row);
     }
-  });
-
-  $('serverOrigin').addEventListener('input', () => {
-    serverDraftDirty = true;
-    serverFeedback = null;
-    updateServerSettings();
-  });
-
-  $('saveServer').addEventListener('click', async () => {
-    if (serverSaving || latestServerState?.serverSwitching) {
-      return;
-    }
-
-    const input = $('serverOrigin') as HTMLInputElement;
-    const url = normalizeServerOrigin(input.value);
-    if (!url) {
-      serverFeedback = { key: 'serverInvalidOrigin', error: true };
-      updateServerSettings();
-      return;
-    }
-
-    // epoch 使用最近 render 的快照。权限请求前不能异步取 state，以免丢失用户手势。
-    const snapshot = latestServerState;
-    if (!snapshot) {
-      serverFeedback = { key: 'serverStateUnavailable', error: true };
-      updateServerSettings();
-      return;
-    }
-
-    serverSaving = true;
-    serverFeedback = { key: 'serverRequestingPermission', error: false };
-    updateServerSettings();
-    try {
-      const granted = await chrome.permissions.request({ origins: [`${url.protocol}//${url.hostname}/*`] });
-      if (!granted) {
-        serverFeedback = { key: 'serverPermissionDenied', error: true };
-        return;
-      }
-
-      serverFeedback = { key: 'serverSwitching', error: false };
-      updateServerSettings();
-      const result = await send<{ ok: boolean; error?: string }>({
-        type: 'popup:setServer', origin: url.origin, epoch: snapshot.serverEpoch,
-      });
-      if (result?.ok) {
-        serverDraftDirty = false;
-        input.value = url.origin;
-        serverFeedback = { key: 'serverSaved', error: false };
-      } else {
-        serverFeedback = { key: 'serverSaveFailed', error: true };
-      }
-    } catch {
-      // 不直接展示后台错误，避免把连接内部信息带到界面上。
-      serverFeedback = { key: 'serverSaveFailed', error: true };
-    } finally {
-      serverSaving = false;
-      updateServerSettings();
-      void render();
-    }
-  });
-}
-
-function siteItem(site: string, scope: string): HTMLLIElement {
-  const li = document.createElement('li');
-  const text = document.createElement('span');
-  const name = document.createElement('span');
-  name.className = 'site';
-  name.textContent = site;
-  const label = document.createElement('span');
-  label.className = 'scope';
-  label.textContent = ` · ${scope}`;
-  text.append(name, label);
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.textContent = t('revoke');
-  btn.addEventListener('click', () => {
-    void send({ type: 'popup:revokeSite', site }).then(render);
-  });
-
-  li.append(text, btn);
-  return li;
+    return li;
+  }));
+  filterSites();
 }
 
 async function render(): Promise<void> {
   const st = await send<PopupState | null>({ type: 'popup:state' });
-  if (!st) {
-    return;
-  }
-
-  renderControlledConversations(st);
+  if (!st) return;
+  latest = st;
+  const available = st.connection === 'connected';
   const readOnly = st.supportedActions.length === 1 && st.supportedActions[0] === 'read';
+  const stateKey = st.connection === 'error' && st.lastError === 'origin_not_allowed'
+    ? 'stateOrigin_not_allowed' : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
+  $('state').textContent = t(stateKey);
+  $('accountRow').hidden = !available || !st.account;
+  $('account').textContent = available ? st.account ?? '' : '';
+  $('connectionMarker').className = st.connection === 'connecting' ? 'spinner' : `dot${available ? '' : ' warn'}`;
+  $('connectedBody').hidden = !available;
+  $('openPlatform').hidden = available && st.shareTarget.kind !== 'next';
+  $('reconnect').hidden = !['replaced', 'error', 'offline'].includes(st.connection);
   $('executionHint').hidden = !readOnly && st.supportedActions.length > 0;
   $('executionHint').textContent = t(readOnly ? 'readOnlyHint' : 'noActionsHint');
-  latestControlState = { controlOrigin: st.controlOrigin, controlTabId: st.controlTabId, serverEpoch: st.serverEpoch };
-  $('showControls').hidden = st.controlTabId === null;
-  ($('showControls') as HTMLButtonElement).disabled = st.serverSwitching;
-  $('controlsHint').hidden = st.controlTabId === null;
-  latestServerState = {
-    serverOrigin: st.serverOrigin,
-    serverEpoch: st.serverEpoch,
-    serverSwitching: st.serverSwitching,
-    serverPermissionGranted: st.serverPermissionGranted,
-  };
-  updateServerSettings();
-
-  // 插件没在平台登记（stream 上的 403）时停住不重试，提示和「稍后会重试」的 error 分开。
-  const key = st.connection === 'error' && st.lastError === 'origin_not_allowed'
-    ? 'stateOrigin_not_allowed'
-    : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
-  $('state').textContent = t(key);
-  $('accountRow').hidden = !st.account;
-  $('account').textContent = st.account ?? '';
-  $('reconnect').hidden = !RECONNECTABLE.has(st.connection);
-
-  $('intro').hidden = st.introSeen;
   $('stoppedRow').hidden = !st.stopped;
-  $('stop').hidden = st.stopped;
-
-  const name = $('displayName') as HTMLInputElement;
-  if (document.activeElement !== name) {
-    name.value = st.displayName;
-  }
-
-  ($('autoMode') as HTMLInputElement).checked = st.autoMode;
-
-  $('share').hidden = !st.canShare || st.shared;
-  // 「将共享给」跟着按钮显示。对话标题来自平台，按纯文本放（textContent），不当 HTML。
-  const target = $('shareTarget');
-  target.hidden = $('share').hidden;
-  target.textContent = st.shareTarget.kind === 'next'
-    ? t('shareTargetNext')
-    : st.shareTarget.title === '' ? t('shareTargetRecent') : t('shareTargetTitled', [st.shareTarget.title]);
-  $('sharedRow').hidden = !st.shared;
-  $('shareNote').hidden = !st.canShare && !st.shared;
-
-  const list = $('sites');
-  list.replaceChildren(
-    ...st.sites.always.map((s) => siteItem(s, t('sitesAlways'))),
-    ...st.sites.conversation.map((s) => siteItem(s, t('sitesConversation'))),
-  );
-  $('sitesNone').hidden = st.sites.always.length + st.sites.conversation.length > 0;
+  $('stopRow').hidden = st.stopped;
+  button('stop').disabled = !available || st.serverSwitching;
+  button('resume').disabled = !available || st.serverSwitching;
+  renderControlled(st);
+  renderSites(st);
+  $('browserName').textContent = st.displayName;
+  if (!editingName) ($('displayName') as HTMLInputElement).value = st.displayName;
+  $('pageDomain').textContent = st.pageSite ? new URL(st.pageSite).host : t('unsupportedPage');
+  $('pageExplanation').textContent = t(st.pageSite === null ? 'unsupportedPageHint' : st.pageOwner ? (st.pageOwner.assistantOpened ? 'assistantPageHint' : 'sharedPageHint') : st.shareTarget.kind === 'next' ? 'noConversationHint' : 'shareHint');
+  $('share').hidden = st.pageOwner !== null || st.shareTarget.kind === 'next';
+  button('share').disabled = !st.canShare || st.stopped || !available;
+  $('shareTarget').hidden = $('share').hidden || !st.canShare;
+  $('shareTarget').textContent = st.shareTarget.kind === 'recent' && st.shareTarget.title
+    ? t('shareTargetTitled', [st.shareTarget.title]) : t('shareTargetRecent');
+  $('sharedRow').hidden = st.pageOwner === null;
+  $('sharedOwner').textContent = st.pageOwner?.title || t('controlUntitled');
+  button('unshare').disabled = st.stopped;
+  $('showControls').hidden = st.controlTabId === null;
+  button('showControls').disabled = st.serverSwitching;
+  $('controlsHint').hidden = st.controlTabId === null;
+  updateServerSettings();
 }
 
-function wire(): void {
-  $('showControls').addEventListener('click', async () => {
-    const state = latestControlState;
-    if (!state?.controlOrigin || state.controlTabId === null) return;
-    const origin = new URL(state.controlOrigin);
-    $('controlsError').hidden = true;
-    try {
-      // 不先 await 查询页面，以保留用户点击带来的权限申请手势。
-      const allowed = await chrome.permissions.request({ origins: [`${origin.protocol}//${origin.hostname}/*`] });
-      if (!allowed) {
-        $('controlsError').textContent = t('controlPermissionDenied');
-        $('controlsError').hidden = false;
-        return;
-      }
-      const result = await send<{ ok: boolean }>({ type: 'popup:showControls', tabId: state.controlTabId, epoch: state.serverEpoch });
-      if (!result?.ok) {
-        $('controlsError').textContent = t('pageAccessNoControls');
-        $('controlsError').hidden = false;
-      }
-    } catch {
-      $('controlsError').textContent = t('controlUnavailable');
-      $('controlsError').hidden = false;
-    }
-  });
-  $('introOk').addEventListener('click', () => {
-    void send({ type: 'popup:dismissIntro' }).then(render);
-  });
-
-  $('saveName').addEventListener('click', () => {
-    const input = $('displayName') as HTMLInputElement;
-    void send<{ ok: boolean }>({ type: 'popup:setDisplayName', name: input.value }).then((r) => {
-      if (r?.ok) {
-        ($('saveName') as HTMLButtonElement).textContent = t('saved');
-        setTimeout(() => {
-          ($('saveName') as HTMLButtonElement).textContent = t('save');
-        }, 1500);
-      }
-
-      input.blur();
-      return render();
-    });
-  });
-
-  $('autoMode').addEventListener('change', (e) => {
-    void send({ type: 'popup:setAutoMode', on: (e.target as HTMLInputElement).checked }).then(render);
-  });
-
-  $('stop').addEventListener('click', () => {
-    void send({ type: 'popup:stop' }).then(render);
-  });
-
-  $('resume').addEventListener('click', () => {
-    void send({ type: 'popup:resume' }).then(render);
-  });
-
-  $('share').addEventListener('click', () => {
-    void send<{ ok: boolean; pending?: boolean }>({ type: 'popup:share' }).then((r) => {
-      if (r?.pending) {
-        $('shareNote').textContent = t('sharePending');
-      }
-
-      return render();
-    });
-  });
-
-  $('unshare').addEventListener('click', () => {
-    void send({ type: 'popup:unshare' }).then(render);
-  });
-
-  $('reconnect').addEventListener('click', () => {
-    void send({ type: 'popup:reconnect' }).then(render);
+for (const el of document.querySelectorAll<HTMLElement>('[data-i18n]')) el.textContent = t(el.dataset.i18n ?? '');
+document.documentElement.lang = chrome.i18n.getUILanguage();
+$('siteFilter').setAttribute('aria-label', t('sitesFilter'));
+($('siteFilter') as HTMLInputElement).placeholder = t('sitesFilter');
+$('openPlatform').addEventListener('click', openPlatform);
+$('openSettings').addEventListener('click', () => show('settings'));
+$('about').addEventListener('click', () => show('about'));
+for (const el of document.querySelectorAll('[data-back]')) el.addEventListener('click', () => show('home'));
+$('siteFilter').addEventListener('input', filterSites);
+$('serverOrigin').addEventListener('input', () => { serverDraftDirty = true; resetServerStage(); });
+$('saveServer').addEventListener('click', () => { void advanceServer(); });
+$('cancelSwitch').addEventListener('click', () => { resetServerStage(); updateServerSettings(); });
+$('restoreDefault').addEventListener('click', () => {
+  ($('serverOrigin') as HTMLInputElement).value = PLATFORM_ORIGIN;
+  serverDraftDirty = true;
+  resetServerStage();
+  void advanceServer();
+});
+$('rename').addEventListener('click', () => {
+  editingName = true;
+  $('nameSummary').hidden = true;
+  $('nameForm').hidden = false;
+  ($('displayName') as HTMLInputElement).focus();
+});
+function cancelName(): void {
+  editingName = false;
+  $('nameForm').hidden = true;
+  $('nameSummary').hidden = false;
+  $('nameError').hidden = true;
+}
+$('nameForm').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); cancelName(); } });
+$('nameForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = $('displayName') as HTMLInputElement;
+  if (!input.value.trim()) { $('nameError').hidden = false; input.setAttribute('aria-invalid', 'true'); return; }
+  button('saveName').disabled = true;
+  try {
+    const result = await send<{ ok: boolean }>({ type: 'popup:setDisplayName', name: input.value });
+    if (result?.ok) { cancelName(); input.removeAttribute('aria-invalid'); await render(); }
+    else $('nameError').hidden = false;
+  } finally { button('saveName').disabled = false; }
+});
+for (const [id, type] of [['stop', 'popup:stop'], ['resume', 'popup:resume'], ['share', 'popup:share'], ['unshare', 'popup:unshare'], ['reconnect', 'popup:reconnect']] as const) {
+  $(id).addEventListener('click', async () => {
+    button(id).disabled = true;
+    try { await send({ type }); await render(); } finally { button(id).disabled = false; }
   });
 }
-
-applyI18n();
-wire();
-wireServerSettings();
+$('showControls').addEventListener('click', async () => {
+  const state = latest;
+  if (!state?.controlOrigin || state.controlTabId === null) return;
+  const origin = new URL(state.controlOrigin);
+  $('controlsError').hidden = true;
+  try {
+    const allowed = await chrome.permissions.request({ origins: [`${origin.protocol}//${origin.hostname}/*`] });
+    if (!allowed) throw new Error('permission');
+    const result = await send<{ ok: boolean }>({ type: 'popup:showControls', tabId: state.controlTabId, epoch: state.serverEpoch });
+    if (!result?.ok) throw new Error('unavailable');
+  } catch { $('controlsError').textContent = t('controlUnavailable'); $('controlsError').hidden = false; }
+});
 void render();
-setInterval(() => {
-  void render();
-}, 2000);
+setInterval(() => { void render(); }, 2000);

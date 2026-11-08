@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { A, CONV2, aiPage, allowSite, approvalWindow, actOnPrompt, call, clickPanelButton, launch, send, type Harness } from './helpers';
+import { A, CONV, CONV2, aiPage, allowSite, approvalWindow, actOnPrompt, call, clickPanelButton, launch, send, type Harness } from './helpers';
 
 const OUT = process.env.BX_VISUAL_OUT ?? '';
 test.skip(!OUT, '设 BX_VISUAL_OUT 才截图');
@@ -86,5 +86,63 @@ for (const v of VARIANTS) {
     } finally {
       await h.close();
     }
+  });
+
+  test(`弹窗与确认窗 · ${v.lang} · ${v.theme}`, async () => {
+    fs.mkdirSync(OUT, { recursive: true });
+    const h = await launch({ lang: v.lang, headless: process.env.BX_VISUAL_HEADED !== '1' });
+    try {
+      await allowSite(h, A);
+      await call(h, 'open', { url: `${A}/form.html` }, { title: LONG_TITLE });
+      await h.sw.evaluate(async ({ conversation, other }) => {
+        const sites = (globalThis as any).__bxTest.sites;
+        for (let i = 0; i < 12; i++) await sites.grant(conversation, `https://course-materials-${i}.example.edu`, i % 3 ? 'conversation' : 'always');
+        await sites.grant(other, 'https://course-materials-1.example.edu', 'conversation');
+      }, { conversation: CONV, other: CONV2 });
+      const popup = await h.ctx.newPage();
+      await popup.setViewportSize({ width: 360, height: 600 });
+      await popup.emulateMedia({ colorScheme: v.theme });
+      await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+      await expect(popup.locator('#siteCount')).toHaveText('13');
+      const prefix = `popup-${v.lang}-${v.theme}`;
+      const save = async (name: string) => {
+        // 扩展首次打开时 Chromium 的合成层可能尚未绘好；等字体与两帧布局完成后再保存验收图。
+        await popup.evaluate(async () => { await document.fonts.ready; await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); });
+        expect(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const footer = await popup.locator('footer').boundingBox();
+        expect(footer!.y + footer!.height).toBeLessThanOrEqual(601);
+        await popup.screenshot({ path: path.join(OUT, `${prefix}-${name}.png`) });
+      };
+      await save('connected');
+      await popup.locator('#sites').scrollIntoViewIfNeeded();
+      await save('sites');
+      await popup.locator('#rename').click();
+      await popup.locator('#displayName').fill('');
+      await popup.locator('#saveName').click();
+      await expect(popup.locator('#nameError')).toBeVisible();
+      await save('rename-invalid');
+      await popup.locator('#displayName').press('Escape');
+      await popup.locator('#privacy summary').click();
+      await popup.locator('#privacy').scrollIntoViewIfNeeded();
+      await save('privacy');
+      await popup.locator('#openSettings').click();
+      await save('settings');
+      await popup.locator('#serverOrigin').fill('https://test.example.edu/path');
+      await popup.locator('#saveServer').click();
+      await expect(popup.locator('#serverOrigin')).toHaveAttribute('aria-invalid', 'true');
+      await save('settings-invalid');
+      await popup.locator('#about').click();
+      await save('about');
+      await popup.close();
+
+      await send(h, 'evaluate', { function: '() => document.title' }, { title: LONG_TITLE });
+      const prompt = await approvalWindow(h);
+      await prompt.setViewportSize({ width: 360, height: 650 });
+      await prompt.emulateMedia({ colorScheme: v.theme });
+      await prompt.screenshot({ path: path.join(OUT, `confirm-${v.lang}-${v.theme}-script.png`) });
+      await prompt.locator('#scriptBox summary').click();
+      await prompt.screenshot({ path: path.join(OUT, `confirm-${v.lang}-${v.theme}-script-expanded.png`) });
+      expect(await prompt.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally { await h.close(); }
   });
 }

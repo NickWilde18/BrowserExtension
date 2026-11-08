@@ -383,13 +383,13 @@ export class TabRegistry {
     return null;
   }
 
+  /** 弹窗取消页面访问：共享页或助手打开的页都只撤销归属，网页保留。 */
   async unshare(tabId: number): Promise<void> {
     const all = await this.all();
+    let owned = false;
     for (const c of Object.values(all)) {
-      c.shared = c.shared.filter((t) => t !== tabId);
-      if (c.active === tabId) {
-        c.active = c.tabs.at(-1) ?? null;
-      }
+      owned ||= c.tabs.includes(tabId);
+      this.removeTab(c, tabId);
     }
 
     if ((await this.kv.get<number>(PENDING_SHARE_KEY)) === tabId) {
@@ -397,6 +397,7 @@ export class TabRegistry {
     }
 
     await this.save();
+    if (owned) await this.ungroup(tabId);
   }
 
   async shareTarget(): Promise<ShareTarget> {

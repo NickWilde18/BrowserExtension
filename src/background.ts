@@ -149,6 +149,17 @@ async function popupState(): Promise<PopupState> {
   const shared = tab?.id !== undefined ? await r.tabs.isShared(tab.id) : false;
   const grants = await r.sites.list();
   const status = r.manager.status;
+  const target = await r.tabs.shareTarget();
+  const siteGroups: PopupState['siteGroups'] = [...new Set([...grants.always, ...Object.values(grants.conversation).flat()])].map((site) => ({
+    site,
+    grants: [
+      ...(grants.always.includes(site) ? [{ scope: 'always' as const, title: '' }] : []),
+      ...Object.entries(grants.conversation).filter(([, sites]) => sites.includes(site)).map(([conversation]) => ({
+        scope: conversation === usedBy ? 'current' as const : 'conversation' as const,
+        title: r.controls.view(conversation).title,
+      })),
+    ],
+  }));
   return {
     connection: status.state,
     supportedActions: [...r.backend.actions],
@@ -156,8 +167,10 @@ async function popupState(): Promise<PopupState> {
     autoMode: (await local.get<boolean>(AUTO_MODE_KEY)) ?? true,
     stopped, introSeen: (await local.get<boolean>(INTRO_KEY)) === true,
     sites: { always: grants.always, conversation: [...new Set(Object.values(grants.conversation).flat())].filter((s) => !grants.always.includes(s)) },
-    canShare: site !== null && usedBy === null && !settings.switching,
-    shared, shareTarget: await r.tabs.shareTarget(), activeConversations: await r.tabs.conversationCount(),
+    siteGroups, pageSite: site,
+    pageOwner: usedBy ? { title: r.controls.view(usedBy).title, assistantOpened: !shared } : null,
+    canShare: site !== null && usedBy === null && target.kind === 'recent' && !settings.switching,
+    shared, shareTarget: target, activeConversations: await r.tabs.conversationCount(),
     serverOrigin: r.options.origin, serverEpoch: r.epoch,
     serverSwitching: settings.switching, serverPermissionGranted: settings.permissionGranted,
     controlTabId: usedBy !== null && site !== null ? tab!.id! : null,
@@ -176,7 +189,7 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
     case 'popup:state': return popupState();
     case 'popup:setServer': return settings.select(msg.origin, msg.epoch);
     case 'popup:resumeConversation': {
-      if (msg.epoch !== r.epoch || typeof msg.conversation !== 'string') return { ok: false };
+      if (stopped || msg.epoch !== r.epoch || typeof msg.conversation !== 'string') return { ok: false };
       await r.controls.resume(msg.conversation);
       return { ok: settings.runtime === r && !settings.switching };
     }
@@ -202,7 +215,7 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
     case 'popup:share': {
       const tab = await activeTab();
       const site = siteOf(tab?.url ?? '');
-      if (tab?.id === undefined || site === null) return { ok: false };
+      if (tab?.id === undefined || site === null || stopped || (await r.tabs.shareTarget()).kind === 'next') return { ok: false };
       const conversation = await r.tabs.share(tab.id);
       if (conversation !== null) {
         await r.sites.grant(conversation, site, 'conversation');

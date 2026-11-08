@@ -157,7 +157,7 @@ if (!testHooks) {
   }
 }
 
-for (const file of ['popup.html', 'popup.css', 'approval.html', 'approval.css']) {
+for (const file of ['theme.css', 'popup.html', 'popup.css', 'approval.html', 'approval.css']) {
   cpSync(path.join(root, 'static', file), path.join(outDir, file));
 }
 

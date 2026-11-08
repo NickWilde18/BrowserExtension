@@ -247,7 +247,7 @@ export class ActionContext implements GateContext {
     this.navigationTimedOut = false;
     const watch = new NavWatch(s);
     const guard = new NavGuard(s, {
-      decide: (site) => this.decideNavigation(site),
+      decide: (site) => this.decideNavigation(s, site),
       download: (d) => {
         // 响应停在拦截里等这一步做完（确认、取内容、送回 Chat），完了才回 204 取消浏览器的下载。
         const job = this.handleCapturedDownload(s, d);
@@ -306,12 +306,15 @@ export class ActionContext implements GateContext {
     return Promise.all(this.downloadJobs);
   }
 
-  private async decideNavigation(site: string): Promise<boolean> {
+  private async decideNavigation(s: TabSession, site: string): Promise<boolean> {
     if (await this.services.sites.isAllowed(this.conversation, site)) {
       return true;
     }
 
-    const r = await this.services.gate.confirm(this, { kind: 'site', site, reviewDetail: {}, promptDetail: {} });
+    // 页面还停在原站点（导航被拦在请求阶段）：确认窗显示「从 / 前往」。来源只给本地确认窗，不发给 Chat。
+    const from = siteOf(await currentUrl(s.tabId).catch(() => ''));
+    const promptDetail = from && from !== site ? { from } : {};
+    const r = await this.services.gate.confirm(this, { kind: 'site', site, reviewDetail: {}, promptDetail });
     if (r.result === 'allow') {
       this.throwIfAborted();
       await this.services.sites.grant(this.conversation, site, r.scope);

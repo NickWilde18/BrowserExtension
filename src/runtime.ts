@@ -178,6 +178,20 @@ export class BrowserRuntime {
     void this.controls.ready.then(() => { if (!this.disposed) this.manager.start(); }).catch(() => undefined);
   }
 
+  /** 切服时等新平台握手；401 等待登录表示平台可达，不必等用户实际登录。 */
+  async waitForConnection(): Promise<boolean> {
+    // start 在 controls.ready 后启动连接；等同一个前置条件，避免把尚未启动的初始 offline 误判为失败。
+    await this.controls.ready;
+    const expires = Date.now() + 15_000;
+    while (!this.disposed && Date.now() < expires) {
+      const state = this.manager.status.state;
+      if (state === 'connected' || state === 'waiting_login') return true;
+      if (state === 'error' || state === 'offline' || state === 'protocol_unsupported' || state === 'replaced') return false;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    }
+    return false;
+  }
+
   async stop(): Promise<void> {
     this.scheduler.stopAll(STOPPED_MESSAGE);
     await this.sessions.detachAll();

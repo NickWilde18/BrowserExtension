@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { A, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, type Harness } from './helpers';
+import { A, actOnPrompt, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, type Harness } from './helpers';
 let h: Harness;
 test.beforeEach(async () => { h = await launch(); await allowSite(h, A); });
 test.afterEach(async () => { await h.close(); });
@@ -19,7 +19,7 @@ for (const kind of ['密码确认', '自输完成', '脚本确认', '上传确�
     const id = await send(h, action, args, { authWaitMs: 1500 });
     await approvalWindow(h);
     if (kind === '自输完成') {
-      await answer(h, "I'll type it");
+      await answer(h, 'Enter it myself');
       const page = await aiPage(h, '/form.html');
       await page.locator('#pw').fill('user-edited');
     }
@@ -27,6 +27,12 @@ for (const kind of ['密码确认', '自输完成', '脚本确认', '上传确�
     if (kind === '下载确认') expect(r).toMatchObject({ outcome: 'ok', payload: { download_denied: true, download_timed_out: true } });
     else expect(r).toMatchObject({ outcome: 'error', code: 'approval_timeout' });
     if (kind === '自输完成') expect(await (await aiPage(h, '/form.html')).locator('#pw').inputValue()).toBe('user-edited');
+    // 到时没答：确认窗留着，改显示「确认已过期，请查看页面」，只剩关闭；点关闭才关窗。
+    const prompt = h.ctx.pages().find((p) => p.url().includes('approval.html'))!;
+    await expect(prompt.locator('#title')).toHaveText('Confirmation expired');
+    await expect(prompt.locator('#body')).toHaveText('If you do not confirm in time, waiting ends. Please check the page.');
+    await expect(prompt.locator('#buttons button')).toHaveText(['Close']);
+    await actOnPrompt(prompt, () => prompt.locator('#buttons button').click());
     await expect.poll(() => h.ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(0);
   });
 }

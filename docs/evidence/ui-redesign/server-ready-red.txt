@@ -1,0 +1,11 @@
+回归命令：pnpm exec vitest run test/unit/server-settings.test.ts --reporter=verbose
+FAIL 新平台连接失败后恢复原地址和新运行期，不恢复旧授权；保持切换中直到连接结论到达
+AssertionError: expected false to be true // Object.is equality
+- Expected
++ Received
+- true
++ false
+❯ test/unit/server-settings.test.ts:48:32
+  expect(settings.switching).toBe(true);
+Test Files  1 failed (1)
+Tests  1 failed | 8 passed (9)

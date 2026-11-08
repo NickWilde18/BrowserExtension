@@ -24,6 +24,9 @@ function referencedKeys(): Set<string> {
     const source = readFileSync(file, 'utf8');
     for (const m of source.matchAll(/\b(?:t|text)\(\s*'([A-Za-z0-9_]+)'/g)) keys.add(m[1]!);
     for (const m of source.matchAll(/:\s*'(control(?:State|Action|Mini)[A-Za-z_]+)'/g)) keys.add(m[1]!);
+    // 按钮表（label / busyLabel / labelKey）与确认窗的标题正文表。
+    for (const m of source.matchAll(/\b(?:label|busyLabel|labelKey)\s*:\s*'([A-Za-z0-9_]+)'/g)) keys.add(m[1]!);
+    for (const m of source.matchAll(/'(approval[A-Z][A-Za-z0-9_]*)'/g)) keys.add(m[1]!);
   }
   for (const file of files(path.join(root, 'static'), /\.html$/)) {
     for (const m of readFileSync(file, 'utf8').matchAll(/data-i18n="([A-Za-z0-9_]+)"/g)) keys.add(m[1]!);

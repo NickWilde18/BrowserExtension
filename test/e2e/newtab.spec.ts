@@ -42,7 +42,7 @@ for (const [name, needle] of [
     const id = await send(h, 'click', { element: name, ref: refOf(snap, needle) });
     const win = await approvalWindow(h);
     expect(await win.locator('#site').textContent()).toBe(B);
-    await answer(h, 'Deny');
+    await answer(h, 'Decline');
     const r = await result(h, id);
     expect(r.code, JSON.stringify(r)).toBe('user_denied');
     expect(r.page?.url).toBe(`${A}/newtab.html`);
@@ -59,7 +59,7 @@ test('新开标签：允许后在本 AI 标签里打开，之后照常能操作'
   const before = tabCount();
 
   const id = await send(h, 'click', { element: 'Pop up', ref: refOf(snap, 'button "Pop up"') });
-  await answer(h, 'This conversation only');
+  await answer(h, 'Allow');
   const r = await result(h, id);
   expect(r.outcome, JSON.stringify(r)).toBe('ok');
   expect(r.page?.url).toBe(`${B}/landing.html?via=open`);

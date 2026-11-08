@@ -3,46 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Service Browser Assistant</title>
-  <link rel="icon" type="image/svg+xml" href="icons/browser-assistant.svg">
+  <title>AI Services Platform</title>
+  <link rel="icon" type="image/png" href="icons/browser-assistant-32.png">
   <link rel="stylesheet" href="approval.css">
 </head>
 <body>
   <main aria-labelledby="title">
-    <header>
-      <div class="brand">
-        <img src="icons/browser-assistant.svg" alt="" width="32" height="32">
-        <span data-i18n="extName"></span>
+    <div class="window-title">
+      <span data-i18n="approvalWindowTitle"></span>
+      <button id="close" type="button">×</button>
+    </div>
+    <header class="brand">
+      <img src="icons/emblem.png" alt="">
+      <div>
+        <strong data-i18n="brandName"></strong>
+        <small data-i18n="brandUniversity"></small>
       </div>
-      <button id="close" class="close" type="button">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
-        <span data-i18n="approvalClose"></span>
-      </button>
     </header>
     <div id="content" class="content">
+      <div id="conversationRow" class="conversation" hidden>
+        <span data-i18n="approvalConversation"></span>
+        <span id="conversation" dir="auto"></span>
+      </div>
       <h1 id="title"></h1>
-      <p id="body" class="description"></p>
-      <dl id="context" class="context">
-        <div>
-          <dt data-i18n="approvalSite"></dt>
-          <dd id="site" class="site" dir="auto"></dd>
-        </div>
-        <div id="conversationRow" hidden>
-          <dt data-i18n="approvalConversation"></dt>
-          <dd id="conversation" dir="auto"></dd>
-        </div>
-      </dl>
-      <section id="detail" class="detail" hidden></section>
-      <section id="review" class="review" hidden>
-        <h2 data-i18n="approvalReview"></h2>
-        <p id="reviewReason" dir="auto"></p>
+      <div id="facts" class="fact" hidden></div>
+      <p id="body"></p>
+      <details id="scriptBox" class="script-disclosure" hidden>
+        <summary data-i18n="approvalScriptToggle"></summary>
+        <pre id="script"></pre>
+      </details>
+      <section id="review" class="notice" hidden>
+        <span data-i18n="approvalReview"></span>
+        <span id="reviewReason" dir="auto"></span>
       </section>
+      <div id="clock" hidden>
+        <div class="countdown"><span aria-hidden="true">◷</span><span id="countdown" role="timer" aria-live="off"></span></div>
+        <div class="countdown-track"><span id="track"></span></div>
+      </div>
+      <div id="pending" class="status-line" role="status" hidden>
+        <i class="spinner"></i><span data-i18n="approvalSubmitting"></span>
+      </div>
+      <div id="buttons" class="actions"></div>
+      <p id="kbdNote" class="kbd-note" data-i18n="approvalKeyboardNote" hidden></p>
     </div>
-    <footer>
-      <div id="buttons" class="buttons"></div>
-      <p id="countdown" class="countdown" role="timer" aria-live="off"></p>
-      <p id="closeHint" class="hint" data-i18n="approvalCloseHint"></p>
-    </footer>
   </main>
   <script type="module" src="approval.js"></script>
 </body>

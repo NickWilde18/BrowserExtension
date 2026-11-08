@@ -11,7 +11,7 @@ function setup(local = new MemoryKV()) {
   const create = vi.fn((origin: string): RuntimeSession => {
     const epoch = `epoch-${++n}`;
     calls.push(`create ${origin}`);
-    return { epoch, start: vi.fn(() => { calls.push(`start ${epoch}`); }), dispose: vi.fn(async () => { calls.push(`dispose ${epoch}`); }) };
+    return { epoch, start: vi.fn(() => { calls.push(`start ${epoch}`); }), waitForConnection: vi.fn(async () => true), dispose: vi.fn(async () => { calls.push(`dispose ${epoch}`); }) };
   });
   const settings = new ServerSettings({ local, defaultOrigin: 'https://first.test', clear, hasPermission, create });
   return { settings, calls, clear, hasPermission, create, local };
@@ -34,6 +34,28 @@ describe('单活动服务器设置', () => {
     expect(calls).toEqual(['dispose epoch-1', 'clear', 'create https://first.test:8443', 'start epoch-2']);
     expect(await local.get('connection.origin')).toBe('https://first.test:8443');
     expect(await local.get('connection.pendingOrigin')).toBeUndefined();
+  });
+
+  it('新平台连接失败后恢复原地址和新运行期，不恢复旧授权；保持切换中直到连接结论到达', async () => {
+    const { settings, calls, clear, create, local } = setup();
+    await settings.ready;
+    let settle!: (ok: boolean) => void;
+    const runtime = { epoch: 'new-epoch', start: vi.fn(), dispose: vi.fn(async () => {}),
+      waitForConnection: () => new Promise<boolean>((resolve) => { settle = resolve; }) };
+    create.mockReturnValueOnce(runtime);
+    const switching = settings.select('https://unreachable.test', 'epoch-1');
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalled());
+    expect(settings.switching).toBe(true);
+    expect(await local.get('connection.pendingOrigin')).toBe('https://unreachable.test');
+    settle(false);
+    expect(await switching).toMatchObject({ ok: false, error: 'rolled_back' });
+    expect(runtime.dispose).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalledTimes(2);
+    expect(settings.origin).toBe('https://first.test');
+    expect(settings.runtime?.epoch).not.toBe('epoch-1');
+    expect(await local.get('connection.origin')).toBe('https://first.test');
+    expect(await local.get('connection.pendingOrigin')).toBeUndefined();
+    expect(calls.at(-1)).toBe(`start ${settings.runtime?.epoch}`);
   });
 
   it('权限拒绝或旧epoch不改变连接和授权，不重试权限', async () => {

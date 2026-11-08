@@ -183,9 +183,10 @@ export async function actOnPrompt(page: Page, action: () => Promise<void>): Prom
   }
 }
 
+/** 按按钮名点确认窗的按钮；字符串按全名精确匹配（「Allow」不能命中「Always allow this site」）。 */
 export async function answer(h: Harness, label: string | RegExp): Promise<void> {
   const page = await approvalWindow(h);
-  await actOnPrompt(page, () => page.locator('#buttons button', { hasText: label }).click());
+  await actOnPrompt(page, () => page.locator('#buttons').getByRole('button', { name: label, exact: typeof label === 'string' }).click());
 }
 
 /** 预先给对话授权站点（跳过站点授权小窗）。 */

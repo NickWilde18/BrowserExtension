@@ -93,7 +93,9 @@ Linux Chromium 已测试只读原型；Firefox 的独立临时扩展探针仅验
 
 工具栏「停止」取消当前操作并释放附着，保留网页；它不是可从中间继续的暂停。站点、密码、自输完成、脚本、上传、跨站确认超时返回 `approval_timeout`；明确拒绝、关窗、Esc 仍返回 `user_denied`。操作此前可能已经产生效果，不能自动重试。下载沿用动作已生效的结果：明确拒绝返回 `ok` 和 `payload.download_denied=true`；确认超时另加 `payload.download_timed_out=true`。
 
-分段证据及未验项见 `docs/server-settings-validation.md`、`docs/control-bar-validation.md` 与 `docs/execution-capabilities-validation.md`。本轮不增加插件审计数据库。
+结果帧可附 `approvals`，按顺序记录本次逐次确认的种类、来源和结论，不带站点、文件名或脚本内容。缺字段表示未记录，空数组表示执行期间无需确认；Chat 将它原样放入操作记录详情。到时未确认的窗口保留过期说明，用户关闭后清理。
+
+设计状态集 07 的界面实施、回归证据和受阻项见 `docs/ui-redesign-validation.md`。历史分段证据见 `docs/server-settings-validation.md`、`docs/control-bar-validation.md` 与 `docs/execution-capabilities-validation.md`。本轮不增加插件审计数据库。
 
 ## 页面快照格式
 

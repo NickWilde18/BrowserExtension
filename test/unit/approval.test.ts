@@ -200,7 +200,7 @@ describe('Gate：先问审查、再问用户', () => {
     const gate = new Gate({
       registry,
       prompts,
-      // 删除插件开关（方案 A）待用户明确同意；在那之前开关保持现有默认值「开」。
+      // 用户已选择方案 A；移除本机开关检查被自动审批器阻止，现阶段仍测原有 gate 的开启路径。
       autoMode: async () => opts.autoMode ?? true,
       connected: () => opts.connected,
       awaitingUser: (conversation, on) => { awaiting.push([conversation, on]); },
@@ -226,7 +226,7 @@ describe('Gate：先问审查、再问用户', () => {
     expect(ctx.notes).toEqual([{ kind: 'site', by: 'review', outcome: 'allow' }]);
   });
 
-  // 方案 A（删掉插件开关、只认对话档位）待用户明确同意后启用。
+  // 用户已选择方案 A；删除 autoMode 检查被自动审批器阻止，此用例保留为待完成项，不能视作通过。
   it.skip('连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关', async () => {
     const { gate, prompts, windows, sentFrames } = setup({ autoMode: false, connected: true });
     const p = gate.confirm(gateCtx(), { kind: 'download', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
@@ -342,5 +342,46 @@ describe('Gate：先问审查、再问用户', () => {
     expect(prompts.answer(w.id, w.windowId, 'done')).toBe(true);
     await expect(done).resolves.toBe('done');
     expect(windows.closed).toEqual([w.windowId]);
+  });
+});
+
+describe('PromptManager：到时没答保留「确认已过期」说明页', () => {
+  const spec = (timeoutMs: number) => ({ kind: 'upload' as const, site: 's', detail: {}, timeoutMs, signal: new AbortController().signal });
+
+  it('超时记为 timeout，但不自动关窗：窗口改显示已过期，用户关窗时才清理；过期后的答复不收', async () => {
+    const windows = new FakeWindows();
+    const prompts = new PromptManager(windows);
+    const { outcome } = await prompts.ask(spec(20));
+    expect(outcome).toBe('timeout');
+    const w = windows.opened[0]!;
+    expect(windows.closed).toEqual([]);
+    expect(prompts.view(w.id, w.windowId)).toMatchObject({ stage: 'expired' });
+    expect(prompts.answer(w.id, w.windowId, 'allow')).toBe(false);
+    prompts.windowClosed(w.windowId);
+    expect(prompts.view(w.id, w.windowId)).toBeNull();
+  });
+
+  it('「我自己输入」等完成超时同样保留说明页；被取消、运行期结束仍直接关窗', async () => {
+    const windows = new FakeWindows();
+    const prompts = new PromptManager(windows);
+    const first = prompts.ask({ ...spec(5000), kind: 'password' });
+    await until(() => windows.opened.length > 0);
+    const w = windows.opened[0]!;
+    prompts.answer(w.id, w.windowId, 'self');
+    await first;
+    await expect(prompts.waitSelfInput(w.id, 20)).resolves.toBe('timeout');
+    expect(prompts.view(w.id, w.windowId)).toMatchObject({ stage: 'expired' });
+    expect(windows.closed).toEqual([]);
+
+    const ctrl = new AbortController();
+    const second = prompts.ask({ ...spec(5000), signal: ctrl.signal });
+    await until(() => windows.opened.length > 1);
+    ctrl.abort();
+    await expect(second).resolves.toMatchObject({ outcome: 'aborted' });
+    await until(() => windows.closed.length > 0);
+    expect(windows.closed).toEqual([windows.opened[1]!.windowId]);
+
+    await prompts.closeAll();
+    expect(windows.closed).toContain(w.windowId);
   });
 });

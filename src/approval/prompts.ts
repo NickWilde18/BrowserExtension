@@ -1,7 +1,8 @@
 // 插件自己的确认小窗（计划 4.5「站点授权」「逐次确认」）。
 //
 // 小窗是插件自己的页面（approval.html），用 chrome.windows.create 开成独立的弹出窗口：平台网页被 XSS
-// 也点不到它。等用户点选单独计时（auth_wait_ms），超时、关掉窗口、请求被中止都按拒绝处理。
+// 也点不到它。等用户点选单独计时（auth_wait_ms）；关掉窗口、请求被中止按拒绝处理并关窗，到时没答记为超时
+// （和拒绝分开）且窗口留着改显示「确认已过期，请查看页面」，由用户自己关（设计状态集 07 的确认窗）。
 
 import type { ApprovalKind } from '../protocol/frames';
 import type { PromptAnswer, PromptView } from '../messages';
@@ -9,12 +10,12 @@ import type { PromptAnswer, PromptView } from '../messages';
 export type PromptOutcome = PromptAnswer | 'timeout' | 'closed' | 'aborted';
 
 /** 每种确认在每个阶段允许的答复。 */
-const ALLOWED: Record<ApprovalKind, { choose: PromptAnswer[]; self_wait: PromptAnswer[] }> = {
-  site: { choose: ['allow_once', 'allow_always', 'deny'], self_wait: [] },
-  password: { choose: ['allow', 'self', 'deny'], self_wait: ['done', 'deny'] },
-  upload: { choose: ['allow', 'deny'], self_wait: [] },
-  download: { choose: ['allow', 'deny'], self_wait: [] },
-  script: { choose: ['allow', 'deny'], self_wait: [] },
+const ALLOWED: Record<ApprovalKind, Record<PromptView['stage'], PromptAnswer[]>> = {
+  site: { choose: ['allow_once', 'allow_always', 'deny'], self_wait: [], expired: [] },
+  password: { choose: ['allow', 'self', 'deny'], self_wait: ['done', 'deny'], expired: [] },
+  upload: { choose: ['allow', 'deny'], self_wait: [], expired: [] },
+  download: { choose: ['allow', 'deny'], self_wait: [], expired: [] },
+  script: { choose: ['allow', 'deny'], self_wait: [], expired: [] },
 };
 
 export interface PromptSpec {
@@ -46,7 +47,8 @@ export interface WindowOps {
 export const chromeWindowOps: WindowOps = {
   async open(url) {
     // 先用紧凑尺寸打开；页面拿到内容后连同浏览器边框一起量高，不为短确认固定预留大片空白。
-    const win = await chrome.windows.create({ url, type: 'popup', width: 480, height: 400, focused: true });
+    // 宽度与插件弹窗一致（设计 360px 内容宽，再留出窗口边框）。
+    const win = await chrome.windows.create({ url, type: 'popup', width: 380, height: 400, focused: true });
     if (win?.id === undefined) {
       throw new Error('window not created');
     }
@@ -107,7 +109,7 @@ export class PromptManager {
 
   /**
    * 密码框「我自己输入」：小窗切到「完成」，等用户输完点完成。返回 done，或 deny / timeout / closed / aborted。
-   * 结束后关掉小窗。
+   * 结束后关掉小窗；超时时窗口留着显示已过期。
    */
   async waitSelfInput(id: string, timeoutMs: number): Promise<PromptOutcome> {
     const entry = this.open.get(id);
@@ -117,7 +119,10 @@ export class PromptManager {
 
     entry.view = { ...entry.view, stage: 'self_wait', expiresAt: Date.now() + timeoutMs };
     const outcome = await this.wait(entry, timeoutMs);
-    await this.dismiss(id);
+    if (outcome !== 'timeout') {
+      await this.dismiss(id);
+    }
+
     return outcome;
   }
 
@@ -204,10 +209,15 @@ export class PromptManager {
 
     const resolve = entry.resolve;
     this.clear(entry);
+    // 到时没答：窗口留着改显示「确认已过期」（答复入口随 resolve 一起失效），等用户关窗时由 windowClosed 清理。
+    if (outcome === 'timeout') {
+      entry.view = { ...entry.view, stage: 'expired' };
+    }
+
     resolve(outcome);
 
-    // 超时、中止时小窗还开着：关掉，并从登记里拿掉。
-    if (outcome === 'timeout' || outcome === 'aborted' || outcome === 'closed') {
+    // 中止、窗口没了：关掉小窗，并从登记里拿掉。
+    if (outcome === 'aborted' || outcome === 'closed') {
       void this.dismiss(id);
     }
   }

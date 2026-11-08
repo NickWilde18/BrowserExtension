@@ -51,8 +51,14 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   await send(FIRST, pending, 'evaluate', { function: '() => document.title' });
   await expect.poll(() => ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(1);
 
-  await popup.locator('#advanced summary').click();
+  await popup.locator('#openSettings').click();
   await popup.locator('#serverOrigin').fill(SECOND);
+  await popup.locator('#saveServer').click();
+  // 先说明系统权限，再从真实点击申请权限；拿到权限后仍须单独确认清除状态。
+  await expect(popup.locator('#serverPermissionHint')).toBeVisible();
+  await popup.locator('#saveServer').click();
+  await expect(popup.locator('#switchConfirmation')).toBeVisible();
+  expect((await state()).serverOrigin).toBe(FIRST);
   await popup.locator('#saveServer').click();
   await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'connected' });
   await expect.poll(() => ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(0);
@@ -66,4 +72,12 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   // 新服务器即使复用了旧服务器 request_id，也不得被旧去重缓存吞掉。
   await send(SECOND, RID, 'tabs', { op: 'list' });
   await expect.poll(async () => (await ctl(SECOND, 'state')).received.find((x: any) => x.frame.request_id === RID)?.frame.payload?.tabs).toEqual([]);
+
+  // 同主机夹具网页不是平台：真实 stream 握手失败，应恢复刚才已验证可达的第二个平台。
+  const beforeFailure = await state();
+  const failed = await popup.evaluate(({ origin, epoch }) => chrome.runtime.sendMessage({ type: 'popup:setServer', origin, epoch }),
+    { origin: A, epoch: beforeFailure.serverEpoch });
+  expect(failed).toMatchObject({ ok: false, error: 'rolled_back' });
+  await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'connected' });
+  expect((await state()).serverEpoch).not.toBe(beforeFailure.serverEpoch);
 });
