@@ -27,6 +27,17 @@ export interface Result {
   payload?: Record<string, any>;
 }
 
+/** 本地授权页使用真实 identity.launchWebAuthFlow；不读取或输出授权码与凭据。 */
+export async function signIn(ctx: BrowserContext, popup: Page, decision = 'Authorize browser'): Promise<void> {
+  const opened = ctx.waitForEvent('page');
+  await popup.locator('#login').click();
+  const authorization = await opened;
+  await authorization.getByRole('button', { name: decision, exact: true }).click();
+  if (decision === 'Authorize browser') {
+    await expect.poll(async () => (await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'popup:state' }))).connection).toBe('connected');
+  } else await expect(popup.locator('#authError')).toBeVisible();
+}
+
 export interface Harness {
   ctx: BrowserContext;
   sw: Worker;

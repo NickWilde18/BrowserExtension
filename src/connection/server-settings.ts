@@ -21,7 +21,7 @@ export function serverHostPermission(origin: string): string {
 export interface RuntimeSession {
   readonly epoch: string;
   start(): void;
-  /** 新平台握手是否可达；要求登录也算可达。只有切服事务等待它，初次启动仍在后台连接。 */
+  /** 是否已连接或已进入独立授权状态；无凭据时尚未验证远端可达性。只有切服事务等待它。 */
   waitForConnection(): Promise<boolean>;
   dispose(): Promise<void>;
 }

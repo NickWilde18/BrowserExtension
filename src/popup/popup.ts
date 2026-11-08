@@ -212,8 +212,8 @@ async function render(): Promise<void> {
   latest = st;
   const available = st.connection === 'connected';
   const readOnly = st.supportedActions.length === 1 && st.supportedActions[0] === 'read';
-  const stateKey = st.connection === 'error' && st.lastError === 'origin_not_allowed'
-    ? 'stateOrigin_not_allowed' : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
+  const stateKey = st.connection === 'error' && st.lastError === 'forbidden'
+    ? 'stateForbidden' : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
   $('state').textContent = t(stateKey);
   $('accountRow').hidden = !available || !st.account;
   $('account').textContent = available ? st.account ?? '' : '';
@@ -221,6 +221,11 @@ async function render(): Promise<void> {
   $('connectedBody').hidden = !available;
   $('openPlatform').hidden = available && st.shareTarget.kind !== 'next';
   $('reconnect').hidden = !['replaced', 'error', 'offline'].includes(st.connection);
+  $('login').hidden = st.connection !== 'waiting_login';
+  button('login').disabled = st.signingIn || st.serverSwitching || !st.serverPermissionGranted;
+  button('login').textContent = t(st.signingIn ? 'signingIn' : 'login');
+  $('logout').hidden = st.connection === 'waiting_login';
+  button('logout').disabled = st.serverSwitching;
   $('executionHint').hidden = !readOnly && st.supportedActions.length > 0;
   $('executionHint').textContent = t(readOnly ? 'readOnlyHint' : 'noActionsHint');
   $('stoppedRow').hidden = !st.stopped;
@@ -252,6 +257,17 @@ document.documentElement.lang = chrome.i18n.getUILanguage();
 $('siteFilter').setAttribute('aria-label', t('sitesFilter'));
 ($('siteFilter') as HTMLInputElement).placeholder = t('sitesFilter');
 $('openPlatform').addEventListener('click', openPlatform);
+for (const [id, type, error] of [['login', 'popup:login', 'loginFailed'], ['logout', 'popup:logout', 'logoutFailed']] as const) {
+  $(id).addEventListener('click', async () => {
+    button(id).disabled = true;
+    $('authError').hidden = true;
+    try {
+      const result = await send<{ ok: boolean }>({ type });
+      if (!result?.ok) throw new Error('authentication_failed');
+    } catch { $('authError').textContent = t(error); $('authError').hidden = false; }
+    finally { await render(); }
+  });
+}
 $('openSettings').addEventListener('click', () => show('settings'));
 $('about').addEventListener('click', () => show('about'));
 for (const el of document.querySelectorAll('[data-back]')) el.addEventListener('click', () => show('home'));

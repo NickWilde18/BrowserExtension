@@ -6,8 +6,8 @@
 ## 连接平台
 
 fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src/connection/fetch-transport.ts`）：四个接口都在
-`<平台对外地址>/chat-service/browser/` 下，一律 POST、带浏览器里的平台会话 Cookie（`credentials: "include"`），
-**不带 `X-Service` 头**（网关按路径选服务名）。
+`<平台对外地址>/chat-service/browser/` 下，一律 POST、`Authorization: Bearer <安装凭据>`、`credentials: "omit"`，
+**不带 `X-Service` 头**（网关按路径选服务名）。网关每个请求向 Chat 同步校验凭据，不缓存，不以平台 Cookie 或插件 Origin 白名单认证。
 
 | 接口 | 用途 |
 |---|---|
@@ -18,7 +18,17 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 
 `install_id` 只用规范形态的 UUID（小写带连字符，Chat 对不是的回 400）；本地存储里的值不合规时换一个新的。
 
-插件发起的 WebSocket 握手带不上 `SameSite=Lax` 的会话 Cookie，fetch 带得上（计划 7.1 实测），所以不用 WebSocket。
+### 独立登录与退出
+
+工具栏点击“登录”后打开 `<平台>/chat/browser-extension/authorize`。参数为 `install_id`、`browser`（chromium/firefox/safari）、`display_name`、`code_challenge`（43 字符）、`code_challenge_method=S256`、`state`；Chromium/Firefox 另带 `identity.getRedirectURL()` 返回的 `redirect_uri`，用 `identity.launchWebAuthFlow` 等待回调。重复点击复用进行中的登录。
+
+Safari 没有 identity 接口时打开平台授权标签页，只接受该标签页导航到同源 `/chat/browser-extension/callback`；核对 state 后交换凭据，再关闭该授权页。关页、拒绝、state 不符均不保存凭据。校验串和授权过程仅保存在运行期内存；若后台或浏览器退出导致登录中断，重新点击登录即可。
+
+平台授权页向 `POST /chat/browser/authorize/` 提交确认，返回一次性 code 与已经校验的 redirect_uri（由 UI 实现）。插件向 `POST /chat-service/browser/token` 发送 `{code, code_verifier, install_id, redirect_uri}`，Safari 的 `redirect_uri` 为 `""`，交换请求不发送 browser。成功响应直接是 `{credential, account}`。凭据保存在 `storage.local`，绑定当前平台 origin 和安装 ID，不轮换、撤销前有效。旧安装没有凭据时需要独立登录，网页登录或退出不会改变插件登录。
+
+401 或 `closed.revoked` 清除本机凭据、站点授权、对话/共享/接管状态，停止重连并等待重新授权；保留用户网页。退出登录向 `POST /chat-service/browser/logout` 发送 `{install_id}`，同样带 Bearer、omit，同时清理本机授权。网络失败仍退出本机并提示在平台移除设备，不能据此声称服务端已撤销。
+
+切换平台只表示保存地址、确认原生主机权限和清理旧运行期。新平台没有匹配凭据时停在等待登录，不发匿名 stream、不验证该地址是否为可达平台；完成独立授权后才建立连接。凭据不会发送给其他 origin。
 
 ## 构建
 
@@ -36,18 +46,11 @@ PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/
 ## 开发者模式安装
 
 `chrome://extensions`（Edge 是 `edge://extensions`）打开「开发者模式」→「加载已解压的扩展程序」→ 选 `dist/`。
-manifest 里的 `key` 固定了开发者模式的插件 id：**`agagklnjfndomhambbpfhenaoclcbpmo`**，平台的
-`browserExtension.allowedExtensionIds` 要登记它（商店上架后商店会给另外的 id，也要登记）。对应的私钥不在仓库里。
+manifest 里的 `key` 固定开发者模式插件 id：**`agagklnjfndomhambbpfhenaoclcbpmo`**，对应私钥不在仓库里。安装身份由用户授权和 PKCE 验证，不再登记插件 Origin 白名单。
 
-默认构建权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`、`cookies`、`scripting`，以及平台地址的主机权限。`cookies` 只用来
-监听平台站点会话 Cookie 的变化：同一台浏览器上退出登录、换人登录时一变就断开重连（`src/connection/cookie-watch.ts`），
-不读写 Cookie，构建后会检查产物里没有读写 Cookie 的调用；Chrome 只把主机权限覆盖的站点的 Cookie 事件交给插件，插件的
-初始主机权限只有构建平台地址；可选 http(s) 来源权限仅在用户点击切换服务器或显示控制条时按具体来源申请。不申请 `proxy`、`management`，不声明 `externally_connectable`，不注册自动内容脚本。安装时浏览器会
-提示「读取和更改所有网站上的数据」，来自 `debugger` 权限。
+默认构建权限：`debugger`、`tabs`、`tabGroups`、`storage`、`downloads`、`scripting`、`identity`，以及平台地址的主机权限。没有 `cookies` 权限或 Cookie 事件监听，生产构建检查产物不含 Cookie API。DOM 构建保留 `tabs`、`storage`、`scripting` 和 `identity`；`--browser safari` 省略 Safari 不支持的 `identity` 权限，配合既有 DOM/event 模式构建。
 
-收会话 Cookie 的变化事件有两个前提（实测）：主机权限不带端口（Chrome 按 `<协议>://<域>/` 判匹配，带端口会收不到）；
-平台是 https 时会话 Cookie 要带 Secure（事件网址的协议看 Cookie 有没有 Secure）。构建脚本自动为主机权限去掉端口，
-实际 fetch 请求保留完整平台来源，带端口的试用地址可以直接构建使用。
+可选 http(s) 来源权限仅在用户点击切换服务器或显示控制条时按具体来源申请。不申请 `proxy`、`management`，不声明 `externally_connectable`，不注册自动内容脚本。原调试执行层的安装提示来自 `debugger` 权限。主机权限按浏览器匹配规则不带端口，实际 fetch 请求保留完整平台来源。
 
 ## 测试
 
@@ -62,9 +65,8 @@ xvfb-run -a pnpm e2e            # Playwright 端到端（不带 xvfb-run 时，�
 
 - `dist-test/`（`--test-hooks --fake-transport`）：连接换成内存假传输，测试代码扮演 Chat 收发帧；
 - `dist-test-fetch/`（`--test-hooks`）：真实传输，平台地址是仿 Chat 服务（`test/e2e/fixtures/chat-server.mjs`，
-  `127.0.0.1:18963`）。它下发与网关同属性的会话 Cookie（`HttpOnly; SameSite=Lax`），校验 Cookie 与 `Origin`，
-  被拒时的响应体与 Chat 一致；`transport.spec.ts` 测连上、动作结果、上传、下载、轮换、断线、401、403、413、
-  轮换后到达的审查结论、换账号，以及每个请求只走这四个路径、不带 `X-Service`。
+  `127.0.0.1:18963`）。它提供合成授权页与 PKCE 交换接口，每个通道请求都校验独立安装凭据，不读取真实平台数据。
+  `authentication.spec.ts` 验证真实 Chromium identity 登录、拒绝、state 不符、并发复用及 Cookie 变化不影响登录；`transport.spec.ts` 验证四通道 Bearer/无 Cookie、动作结果、上传下载、轮换、断线、401、403、413、撤销、退出与账号状态清理。
 
 - `dist-test-dom/`（`--test-hooks --fake-transport --execution-backend dom`）：真实扩展只读执行层，验证共享页读取、ref/depth/boxes、隔离世界、来源权限及 iframe 整页拒绝。
 
@@ -85,7 +87,7 @@ pnpm build --platform-origin https://example.edu --execution-backend dom --backg
 
 只读原型仅读取明确共享且浏览器授予来源权限的当前页；共享后通过「授予网页权限并显示控制条」申请原生页面访问权限。只支持单文档的快照/ref/depth/boxes；存在 iframe、受限页面或零视口时整页拒绝，不返回删减快照。不提供导航、写入、上传下载或调试近似执行。切换当前读取页可先取消原当前页共享，再共享新页。
 
-Linux Chromium 已测试只读原型；Firefox 的独立临时扩展探针仅验证基础 API 和合成页面，使用假传输和测试预授权。平台目前只接受已登记的 `chrome-extension://` 来源，Firefox/Safari 平台鉴权来源尚未设计、也未联调。Safari 未在真机加载或执行，Linux WebKit 不作为替代验证。事件后台产物是原型，不表示已交付这些浏览器的产品支持。
+Linux Chromium 已验证只读原型和独立登录的本地真实扩展 E2E。Firefox 既有临时扩展探针验证基础 API 与合成页面；本轮 Firefox identity 与 Safari 标签回调另有单元契约测试。Firefox 独立登录真机联调、Safari 真机加载/执行及跨仓真实服务联调尚未验证；Linux WebKit 不作为 Safari 扩展验证。事件后台产物仍是原型，不表示这些浏览器已经具备完整执行能力。
 
 ## 网页控制与确认结果
 
@@ -119,7 +121,7 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
 | 位置 | 内容 |
 |---|---|
 | `src/protocol/` | 帧与 22 个动作的参数校验、错误码 |
-| `src/connection/` | 传输接口、真实传输（fetch 双向通道）、连接状态机（ready、心跳、退避重连、轮换、保活）、账号变化、内存假传输 |
+| `src/connection/` | 独立 PKCE 登录、凭据保存与撤销、fetch 双向通道、连接状态机（ready、心跳、退避重连、轮换、保活）、账号变化、内存假传输 |
 | `src/scheduler.ts` | 同一对话串行、不同对话并行、排队上限、去重、恰好一个结果 |
 | `src/approval/` | 审批帧接收规则、确认小窗、先问审查再问用户的流程 |
 | `src/policy/` | 网址可开范围、站点授权记录、凭据头去除 |
@@ -183,8 +185,8 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
   显示）；最近用过浏览器的对话标题为空时「将共享给最近使用浏览器的对话」，还没有对话用过时「将共享给下一个使用
   浏览器的对话」。
 - 连接：`rotate`（连接到了 5 分钟寿命）与 `server_shutdown` 立刻重连；断线、404、429 按 1 秒起翻倍、封顶 60 秒、
-  带抖动的退避重连；401 时弹窗提示在平台网页上登录，之后按退避重试；`stream` 上 403（平台没登记这个插件）停住、
-  弹窗提示，点「重新连接」再试；`protocol_unsupported` 提示升级、不重连。轮换、重连之后，旧连接上开始的请求，它的
+  带抖动的退避重连；401 或 `closed.revoked` 清理凭据和本机授权、等待独立登录，不自动重连；`stream` 上 403 停住，
+  弹窗提示检查设备授权，点“重新连接”再试；`protocol_unsupported` 提示升级、不重连。轮换、重连之后，旧连接上开始的请求，它的
   取消与审查结论从新连接来，照认。
 - 换了平台账号（`ready.account` 与上次连上时不同，上次的账号记在本地存储）：新连接可用之前，先中止排队与在跑的
   请求、清掉站点授权（含「总是允许」）、对话到标签组的对应与「将共享给」、待共享的标签，断开调试附着；AI 标签不关，

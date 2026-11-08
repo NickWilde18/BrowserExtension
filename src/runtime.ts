@@ -12,6 +12,7 @@ import { toActionError } from './protocol/errors';
 import { SessionManager } from './browser/sessions';
 import { TabRegistry } from './browser/tabs';
 import { AccountWatch } from './connection/account';
+import { BrowserAuthentication } from './connection/authentication';
 import { ConnectionManager } from './connection/manager';
 import { ScopedKV } from './connection/scoped-storage';
 import type { Transport } from './connection/transport';
@@ -31,7 +32,7 @@ export interface RuntimeOptions {
   local: KV;
   session: KV;
   identity: Identity;
-  transport(origin: string): Transport;
+  transport(origin: string, credential: () => Promise<string | undefined>): Transport;
   stopped(): boolean;
   onUserStop(): void;
   onControlChanged?(conversation: string): void;
@@ -50,6 +51,7 @@ export class BrowserRuntime {
   readonly sessions: SessionManager;
   readonly downloads: DownloadWatcher;
   readonly manager: ConnectionManager;
+  readonly authentication: BrowserAuthentication;
   readonly scheduler: Scheduler;
   readonly notices: Notices;
   readonly controls: ConversationControl;
@@ -110,8 +112,14 @@ export class BrowserRuntime {
       })]);
     }, (conversation) => options.onControlChanged?.(conversation));
     const accounts = new AccountWatch(this.local, () => this.forgetPreviousAccount());
+    this.authentication = new BrowserAuthentication({
+      origin: options.origin, local: this.local, identity: options.identity,
+      onAuthenticated: () => { if (!this.disposed) this.manager.reconnectNow(); },
+      onInvalidated: () => this.forgetPreviousAccount(),
+    });
     this.manager = new ConnectionManager({
-      transportFactory: () => options.transport(options.origin),
+      transportFactory: () => options.transport(options.origin, () => this.authentication.credential()),
+      onAuthenticationLost: () => { void this.authentication.invalidate().catch(() => undefined); },
       hello: () => options.identity.hello(this.backend.actions),
       beforeReady: (account) => accounts.connected(account).then(() => undefined),
       onFrame: (frame) => {
@@ -177,7 +185,7 @@ export class BrowserRuntime {
     void this.controls.ready.then(() => { if (!this.disposed) this.manager.start(); }).catch(() => undefined);
   }
 
-  /** 切服时等新平台握手；401 等待登录表示平台可达，不必等用户实际登录。 */
+  /** 切服时等连接就绪或进入独立登录；无凭据时不发匿名 stream，不代表已经验证平台可达。 */
   async waitForConnection(): Promise<boolean> {
     // start 在 controls.ready 后启动连接；等同一个前置条件，避免把尚未启动的初始 offline 误判为失败。
     await this.controls.ready;
@@ -191,6 +199,11 @@ export class BrowserRuntime {
     return false;
   }
 
+  async logout(): Promise<{ ok: boolean }> {
+    this.manager.requireLogin();
+    return this.authentication.logout();
+  }
+
   async stop(): Promise<void> {
     this.scheduler.stopAll(STOPPED_MESSAGE);
     await this.sessions.detachAll();
@@ -200,6 +213,7 @@ export class BrowserRuntime {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
     this.disposed = true;
+    this.authentication.dispose();
     this.controls.dispose();
     this.generation++;
     this.manager.dispose();

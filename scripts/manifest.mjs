@@ -1,15 +1,13 @@
 // manifest 的唯一来源：权限、主机权限、入口都在这里定。
 //
-// 权限按计划 4.5：debugger、tabs、tabGroups、storage、downloads、cookies，加平台对外地址的主机权限。
-// cookies 只用来监听平台站点会话 Cookie 的变化、一变就断开重连（计划第 9 节第 17 条，src/connection/cookie-watch.ts），
-// 不读写 Cookie：Chrome 只把主机权限覆盖的站点的 Cookie 事件交给插件，插件的主机权限只有平台地址；构建后检查产物里没有
-// 读写 Cookie 的调用（scripts/build.mjs）。
+// 权限包含执行层所需能力和 identity（浏览器管理的登录回调），不申请 cookies。
+// Safari 没有 identity 接口，构建时通过 --browser safari 省略该权限，使用平台同源标签页回调。
 // 不申请 proxy、management；不声明 externally_connectable（网页不能给插件发消息）；
 // 不注册内容脚本（页面里的代码只经调试接口按需注入，见 src/browser/frames.ts）。
 
 /**
  * 开发者模式安装用的固定公钥（manifest 的 key），对应插件 id `agagklnjfndomhambbpfhenaoclcbpmo`。
- * 私钥不在仓库里；商店上架时商店会给另一个 id，两边都要登记进平台的 allowedExtensionIds。
+ * 私钥不在仓库里。该公钥固定开发安装 ID；身份认证由用户授权和 PKCE 完成。
  */
 export const DEV_PUBLIC_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7EXFLdKt5OLAC2mOeSlsbuawIXBWPbOpZ5OAIC3bFgxF6UsIPAZuo0jknj8MZFg7' +
@@ -19,8 +17,8 @@ export const DEV_PUBLIC_KEY =
 
 export const DEV_EXTENSION_ID = 'agagklnjfndomhambbpfhenaoclcbpmo';
 
-export function buildManifest({ version, platformOrigin, key, executionBackend = 'auto', backgroundMode = 'worker' }) {
-  // Cookie 变化事件按协议与主机匹配，不带端口；实际请求仍使用完整平台来源。
+export function buildManifest({ version, platformOrigin, key, executionBackend = 'auto', backgroundMode = 'worker', browser = 'chromium' }) {
+  // 主机权限匹配不带端口；实际请求仍使用完整平台来源。
   const platform = new URL(platformOrigin);
   const hostPermission = `${platform.protocol}//${platform.hostname}/*`;
   return {
@@ -47,9 +45,10 @@ export function buildManifest({ version, platformOrigin, key, executionBackend =
       default_title: '__MSG_extName__',
       default_icon: { 16: 'icons/browser-assistant-16.png', 32: 'icons/browser-assistant-32.png' },
     },
-    permissions: executionBackend === 'dom'
-      ? ['tabs', 'storage', 'cookies', 'scripting']
-      : ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies', 'scripting'],
+    permissions: [
+      ...(executionBackend === 'dom' ? ['tabs', 'storage', 'scripting'] : ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'scripting']),
+      ...(browser === 'safari' ? [] : ['identity']),
+    ],
     host_permissions: [hostPermission],
     // 只在用户明确保存平台来源或开启网页控制条时申请对应来源，不在安装时授予全站。
     optional_host_permissions: ['http://*/*', 'https://*/*'],

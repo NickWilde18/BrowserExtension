@@ -10,7 +10,7 @@
 // MV3 后台空闲 30 秒就会被回收，只靠下行数据不算活动（计划 7.1 实测：第 31 秒被回收）；调扩展 API 会
 // 重置空闲计时。所以只要管理器在工作（连着、连接中、等重连），就每 20 秒调一次 keepAlive：退避等待
 // 期间后台被回收的话，重连的定时器就再也不会触发（计划的权限清单里没有 alarms，没有别的唤醒手段）。
-// 停在 replaced / protocol_unsupported / 插件没登记（origin_not_allowed）时不再保活，后台照常休眠。
+// 停在 replaced / protocol_unsupported / 插件没登记（forbidden）时不再保活，后台照常休眠。
 
 import { KEEPALIVE_INTERVAL_MS, PROTOCOL_VERSION, READY_TIMEOUT_MS } from '../config';
 import { parseInbound } from '../protocol/frames';
@@ -21,14 +21,14 @@ import type { Transport, TransportCloseInfo } from './transport';
 export type ConnectionState =
   | 'connecting'
   | 'connected'
-  /** 平台登录态没有或过期：用户在平台网页上重新登录后自动恢复。 */
+  /** 安装凭据不存在或已撤销：等待用户在插件中发起授权。 */
   | 'waiting_login'
   /** 同一个安装 id 有另一条连接，不自动重连（契约 3.1）。 */
   | 'replaced'
   /** Chat 不支持本插件的协议版本，要升级插件。 */
   | 'protocol_unsupported'
   /**
-   * 配置问题：插件没在平台登记（stream 上的 403，lastError 为 origin_not_allowed）时停住、等用户点「重新连接」；
+   * 配置问题：插件没在平台登记（stream 上的 403，lastError 为 forbidden）时停住、等用户点「重新连接」；
    * hello 被拒（bad_hello）时慢速重试。
    */
   | 'error'
@@ -75,6 +75,7 @@ export interface ManagerDeps {
   /** 连接可用期间收到的请求类帧（插件自己发起的下行连接上来的；轮换、重连之后的新连接也算）。 */
   onFrame(frame: ConnectionFrame): void;
   onStatus(status: ConnectionStatus): void;
+  onAuthenticationLost?(): void;
   keepAlive(): void;
   timers?: Timers;
   random?: () => number;
@@ -150,18 +151,12 @@ export class ConnectionManager {
     void this.connect();
   }
 
-  /**
-   * 平台会话变了（会话 Cookie 变化，见 cookie-watch.ts）：断开当前连接、立刻重连，让网关按此刻的会话重新校验；等登录
-   * 的退避也不再等。停在 replaced、protocol_unsupported、插件没登记（origin_not_allowed）时不动：换个会话解决不了，
-   * 要用户在弹窗里处理。
-   */
-  sessionChanged(): void {
-    const { state, lastError } = this.stateValue;
-    if (!this.started || state === 'replaced' || state === 'protocol_unsupported' || (state === 'error' && lastError === 'origin_not_allowed')) {
-      return;
-    }
-
-    this.reconnectNow();
+  /** 主动退出时先关闭传输，凭据撤销和本地清理由调用方等待完成。 */
+  requireLogin(reason = 'unauthenticated'): void {
+    this.teardown();
+    this.clearRetry();
+    this.stopKeepAlive();
+    this.setState({ state: 'waiting_login', lastError: reason });
   }
 
   /** 永久结束本服务器运行期；旧回调和旧重试不能重新建立连接。 */
@@ -345,11 +340,11 @@ export class ConnectionManager {
         this.scheduleRetry(Math.floor(this.random() * SHUTDOWN_JITTER_MS), 'offline', reason);
         return;
       case 'unauthenticated':
-        // 没有登录态（stream 回 401；Chat 不发 closed{unauthenticated}）：提示用户在平台网页上重新登录，之后按退避
-        // 重试（登录好了下一次就连上）。
-        this.scheduleRetry(this.backoff(), 'waiting_login', reason);
+      case 'revoked':
+        this.requireLogin(reason);
+        this.deps.onAuthenticationLost?.();
         return;
-      case 'origin_not_allowed':
+      case 'forbidden':
         // 插件 id 没在平台登记（stream 上的 403）：停止并提示，重试也不会好；弹窗「重新连接」再试。
         this.stopKeepAlive();
         this.setState({ state: 'error', lastError: reason, account: this.stateValue.account });

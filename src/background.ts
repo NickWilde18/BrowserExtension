@@ -1,7 +1,6 @@
 // 插件后台：每个服务器使用独立运行期；浏览器事件始终交给当前运行期。
 import { TabRegistry } from './browser/tabs';
 import { IDLE_DETACH_MS, PLATFORM_ORIGIN } from './config';
-import { watchSessionCookie } from './connection/cookie-watch';
 import { FakeServer, FakeTransport } from './connection/fake-transport';
 import { FetchTransport } from './connection/fetch-transport';
 import { ServerSettings, serverHostPermission } from './connection/server-settings';
@@ -34,7 +33,7 @@ const settings = new ServerSettings({
     let bar: ControlBar;
     const runtime = new BrowserRuntime({
       origin, local, session, identity,
-      transport: (target) => __FAKE_TRANSPORT__ ? new FakeTransport(fakeServer as FakeServer) : new FetchTransport(target),
+      transport: (target, credential) => __FAKE_TRANSPORT__ ? new FakeTransport(fakeServer as FakeServer) : new FetchTransport(target, credential),
       stopped: () => stopped,
       onUserStop: () => { void stop(); },
       onControlChanged: (conversation) => { void bar.refresh(conversation).catch(() => undefined); },
@@ -54,13 +53,6 @@ const settings = new ServerSettings({
     await local.remove('state.account');
     await session.remove('control.conversations');
   },
-});
-
-// 顶层注册使休眠后台能被 Cookie 事件唤醒；按当前来源的 hostname 过滤，不读 Cookie 值。
-watchSessionCookie({
-  platformHost: () => new URL(settings.origin).hostname,
-  addListener: (listener) => chrome.cookies.onChanged.addListener(listener),
-  onSessionCookieChanged: () => settings.runtime?.manager.sessionChanged(),
 });
 
 async function stop(): Promise<void> {
@@ -161,6 +153,7 @@ async function popupState(): Promise<PopupState> {
   }));
   return {
     connection: status.state,
+    signingIn: r.authentication.signingIn,
     supportedActions: [...r.backend.actions],
     displayName: await identity.displayName(),
     stopped, introSeen: (await local.get<boolean>(INTRO_KEY)) === true,
@@ -185,6 +178,10 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
   if (settings.switching && msg.type !== 'popup:state') return { ok: false, error: 'switching' };
   switch (msg.type) {
     case 'popup:state': return popupState();
+    case 'popup:login':
+      if (!settings.permissionGranted) return { ok: false };
+      return r.authentication.login();
+    case 'popup:logout': return r.logout();
     case 'popup:setServer': return settings.select(msg.origin, msg.epoch);
     case 'popup:resumeConversation': {
       if (stopped || msg.epoch !== r.epoch || typeof msg.conversation !== 'string') return { ok: false };

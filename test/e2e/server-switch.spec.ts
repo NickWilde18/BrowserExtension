@@ -3,7 +3,7 @@ import { chromium, expect, test, type BrowserContext, type Page, type Worker } f
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { A, CONV } from './helpers';
+import { A, CONV, signIn } from './helpers';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIRST = 'http://127.0.0.1:18963';
@@ -39,10 +39,9 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] });
   sw = ctx.serviceWorkers()[0] ?? await ctx.waitForEvent('serviceworker');
   const id = new URL(sw.url()).host;
-  const login = await ctx.newPage();
-  await login.goto(`${FIRST}/login`);
   popup = await ctx.newPage();
   await popup.goto(`chrome-extension://${id}/popup.html`);
+  await signIn(ctx, popup);
   await expect.poll(async () => (await state()).connection).toBe('connected');
   await sw.evaluate(({ conv, site }) => (globalThis as any).__bxTest.sites.grant(conv, site, 'always'), { conv: CONV, site: A });
   await send(FIRST, RID, 'open', { url: `${A}/form.html` });
@@ -60,7 +59,11 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   await expect(popup.locator('#switchConfirmation')).toBeVisible();
   expect((await state()).serverOrigin).toBe(FIRST);
   await popup.locator('#saveServer').click();
-  await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'connected' });
+  await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'waiting_login' });
+  await expect(popup.locator('#serverError')).toContainText('saved');
+  expect((await ctl(SECOND, 'state')).hellos).toHaveLength(0);
+  await popup.locator('[data-back]').first().click();
+  await signIn(ctx, popup);
   await expect.poll(() => ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(0);
   expect((await state()).sites).toEqual({ always: [], conversation: [] });
   expect(await sw.evaluate((conv) => (globalThis as any).__bxTest.tabs.list(conv), CONV)).toEqual([]);
@@ -73,11 +76,11 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   await send(SECOND, RID, 'tabs', { op: 'list' });
   await expect.poll(async () => (await ctl(SECOND, 'state')).received.find((x: any) => x.frame.request_id === RID)?.frame.payload?.tabs).toEqual([]);
 
-  // 同主机夹具网页不是平台：真实 stream 握手失败，应恢复刚才已验证可达的第二个平台。
-  const beforeFailure = await state();
-  const failed = await popup.evaluate(({ origin, epoch }) => chrome.runtime.sendMessage({ type: 'popup:setServer', origin, epoch }),
-    { origin: A, epoch: beforeFailure.serverEpoch });
-  expect(failed).toMatchObject({ ok: false, error: 'rolled_back' });
-  await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'connected' });
-  expect((await state()).serverEpoch).not.toBe(beforeFailure.serverEpoch);
+  // 未授权地址只保存并等待登录，不发送带另一个平台凭据的探测请求。
+  const beforeChange = await state();
+  const selected = await popup.evaluate(({ origin, epoch }) => chrome.runtime.sendMessage({ type: 'popup:setServer', origin, epoch }),
+    { origin: A, epoch: beforeChange.serverEpoch });
+  expect(selected).toMatchObject({ ok: true });
+  await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: A, connection: 'waiting_login' });
+  expect((await state()).serverEpoch).not.toBe(beforeChange.serverEpoch);
 });

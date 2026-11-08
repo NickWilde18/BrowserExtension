@@ -41,7 +41,8 @@ function expectCleanRequests(calls: Call[]): void {
     expect(PATHS.has(c.url), c.url).toBe(true);
     expect(new URL(c.url).pathname).not.toContain('//');
     expect(c.init.method).toBe('POST');
-    expect(c.init.credentials).toBe('include');
+    expect(c.init.credentials).toBe('omit');
+    expect(headersOf(c.init).authorization === 'Bearer fixture-credential').toBe(true);
     expect(Object.keys(headersOf(c.init)).map((k) => k.toLowerCase())).not.toContain('x-service');
   }
 }
@@ -56,7 +57,7 @@ describe('FetchTransport', () => {
     const calls = mockFetch(() => s.response);
     const frames: unknown[] = [];
     const closes: unknown[] = [];
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: (f) => frames.push(f), onClose: (i) => closes.push(i) });
     await t.send(HELLO);
     await tick();
@@ -77,7 +78,7 @@ describe('FetchTransport', () => {
     const s = ndjson(['not json\n{"type":"ping"}\n']);
     mockFetch(() => s.response);
     const frames: unknown[] = [];
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: (f) => frames.push(f), onClose: () => undefined });
     await t.send(HELLO);
     await tick();
@@ -86,7 +87,7 @@ describe('FetchTransport', () => {
 
   it.each([
     [401, '', 'unauthenticated'],
-    [403, '', 'origin_not_allowed'],
+    [403, '', 'forbidden'],
     [404, '', 'not_enabled'],
     [429, '', 'rate_limited'],
     [400, '{"type":"closed","reason":"protocol_unsupported"}\n', 'protocol_unsupported'],
@@ -94,7 +95,7 @@ describe('FetchTransport', () => {
     [503, '', 'network'],
   ])('stream 回 %i → 原因 %s', async (status, body, reason) => {
     mockFetch(() => new Response(body, { status }));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await expect(t.send(HELLO)).rejects.toEqual(new TransportError(reason as string));
   });
@@ -102,7 +103,7 @@ describe('FetchTransport', () => {
   // 补充约定 2：400 / 403 的响应体是一行 closed；401（未登录）/ 404（功能没开）/ 429（限流）的响应体是 JSON 错误、
   // 不是帧，只看状态码（哪怕长得像一帧 closed 也不读）。
   it.each([
-    [403, '{"type":"closed","reason":"origin_not_allowed"}\n', 'origin_not_allowed'],
+    [403, '{"type":"closed","reason":"forbidden"}\n', 'forbidden'],
     [401, '{"code":401,"message":"unauthenticated"}', 'unauthenticated'],
     [401, '{"type":"closed","reason":"replaced"}\n', 'unauthenticated'],
     [404, '{"code":404,"message":"not found"}', 'not_enabled'],
@@ -111,7 +112,7 @@ describe('FetchTransport', () => {
     [400, '{"type":"closed","reason":"rotate"}\n', 'bad_hello'],
   ])('stream 被拒：%i，响应体 %s → 原因 %s', async (status, body, reason) => {
     mockFetch(() => new Response(body, { status }));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await expect(t.send(HELLO)).rejects.toEqual(new TransportError(reason as string));
   });
@@ -120,7 +121,7 @@ describe('FetchTransport', () => {
     const s = ndjson([]);
     const statuses = [413, 204];
     const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: statuses.shift() ?? 204 })));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     const big = { type: 'result' as const, request_id: '11111111-2222-4333-8444-555555555555', outcome: 'ok' as const, payload: { snapshot: 'x' } };
@@ -136,7 +137,7 @@ describe('FetchTransport', () => {
   it('frames 回 413 的不是结果帧：报错，不重发', async () => {
     const s = ndjson([]);
     const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: 413 })));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     await expect(t.send({ type: 'progress', request_id: '11111111-2222-4333-8444-555555555555', stage: 'working' })).rejects.toBeInstanceOf(TransportError);
@@ -147,7 +148,7 @@ describe('FetchTransport', () => {
     const s = ndjson([]);
     const statuses = [400, 400];
     const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: statuses.shift() ?? 200 })));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     const bad = { type: 'result' as const, request_id: '11111111-2222-4333-8444-555555555555', outcome: 'ok' as const, payload: { snapshot: 'x' } };
@@ -162,7 +163,7 @@ describe('FetchTransport', () => {
   it('frames 回 400 的不是结果帧：丢掉，不报错、不重发', async () => {
     const s = ndjson([]);
     const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: 400 })));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     await t.send({ type: 'progress', request_id: '11111111-2222-4333-8444-555555555555', stage: 'working' });
@@ -173,7 +174,7 @@ describe('FetchTransport', () => {
     const s = ndjson([]);
     const statuses = [204, 403, 404, 500];
     const calls = mockFetch((url) => (url.endsWith('/stream') ? s.response : new Response(null, { status: statuses.shift() ?? 204 })));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     const frame = { type: 'result' as const, request_id: '11111111-2222-4333-8444-555555555555', outcome: 'ok' as const };
@@ -202,7 +203,7 @@ describe('FetchTransport', () => {
 
       return new Response(null, { status: 404 });
     });
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     const blob = await t.fetchUpload('r1', 'tok-1');
@@ -216,7 +217,7 @@ describe('FetchTransport', () => {
   it('frames 成功是 200、响应体 {}（Chat 的统一响应中间件补的 JSON）：按 2xx 判成功', async () => {
     const s = ndjson([]);
     mockFetch((url) => (url.endsWith('/stream') ? s.response : Response.json({})));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     await expect(t.send({ type: 'progress', request_id: '11111111-2222-4333-8444-555555555555', stage: 'working' })).resolves.toBeUndefined();
@@ -229,7 +230,7 @@ describe('FetchTransport', () => {
       () => new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { 'Content-Type': 'text/plain', 'Content-Length': '3' } }),
     ];
     mockFetch((url) => (url.endsWith('/stream') ? s.response : replies.shift()!()));
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     await expect(t.fetchUpload('r1', 'tok-1')).rejects.toEqual(new TransportError('upload_truncated'));
@@ -248,7 +249,7 @@ describe('FetchTransport', () => {
       forms.push(init.body as FormData);
       return n++ === 0 ? Response.json({ file_id: 'f-1' }) : new Response(null, { status: 413 });
     });
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: () => undefined });
     await t.send(HELLO);
     const data = new Blob(['a,b\n'], { type: 'text/csv' });
@@ -273,7 +274,7 @@ describe('FetchTransport', () => {
       return s.response;
     });
     const closes: unknown[] = [];
-    const t = new FetchTransport(ORIGIN);
+    const t = new FetchTransport(ORIGIN, async () => 'fixture-credential');
     await t.open({ onFrame: () => undefined, onClose: (i) => closes.push(i) });
     await t.send(HELLO);
     t.close();

@@ -1,14 +1,13 @@
 // 真实传输（契约第 2 节，已定 A2：fetch 双向通道）：一条下行长 fetch 加若干上行 POST。
 //
-// 插件发起的 WebSocket 握手带不上 SameSite=Lax 的平台会话 Cookie，fetch 带得上（计划 7.1 实测），所以：
+// 每个请求使用 Chat 签发的安装凭据，不携带平台网页 Cookie：
 // - stream：POST hello，响应是 NDJSON 下行流，一行一帧；
 // - frames：上行帧（result、progress、approval_request）；
 // - uploads：凭令牌取上传文件的内容；
 // - files：下载、PDF 的内容 multipart 送回，拿 file_id。
 //
-// 四个接口都在 `<平台对外地址>/chat-service/browser/` 下，一律 POST、credentials: "include"（浏览器带上平台的会话
-// Cookie，网关据此注入身份；插件的 POST 带 Origin，Chat 据此认插件）。**不带 X-Service 头**：网关按路径选服务名，
-// 带了就落回首段、扣用户的共用额度。插件里只有平台对外地址。
+// 四个接口都在 `<平台对外地址>/chat-service/browser/` 下，一律 POST、Bearer、credentials: "omit"。
+// 不带服务选择头：网关按路径选服务，并向 Chat 同步校验安装凭据。插件里只有平台对外地址。
 
 import type { OutboundFrame } from '../protocol/frames';
 import { TransportError } from './transport';
@@ -26,7 +25,7 @@ function reasonForStatus(status: number): string {
     case 401:
       return 'unauthenticated';
     case 403:
-      return 'origin_not_allowed';
+      return 'forbidden';
     case 404:
       return 'not_enabled';
     case 413:
@@ -46,11 +45,15 @@ export class FetchTransport implements Transport {
   private installId = '';
   private closed = false;
 
-  constructor(private readonly origin: string) {}
+  private credential = '';
+
+  constructor(private readonly origin: string, private readonly getCredential: () => Promise<string | undefined>) {}
 
   async open(handlers: TransportHandlers): Promise<void> {
     // 连接在发 hello 时才真正建立（hello 是 stream 的请求体）。
     this.handlers = handlers;
+    this.credential = await this.getCredential() ?? '';
+    if (!this.credential) throw new TransportError('unauthenticated');
   }
 
   async send(frame: OutboundFrame): Promise<void> {
@@ -143,13 +146,17 @@ export class FetchTransport implements Transport {
   }
 
   private async post(name: 'frames' | 'uploads' | 'files', body: BodyInit, contentType: string | null): Promise<Response> {
-    const init: RequestInit = { method: 'POST', credentials: 'include', cache: 'no-store', body };
-    if (contentType) {
-      init.headers = { 'Content-Type': contentType };
-    }
+    if (this.closed) throw new TransportError('not_connected');
+    const init: RequestInit = {
+      method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error', body,
+      headers: { Authorization: `Bearer ${this.credential}`, ...(contentType ? { 'Content-Type': contentType } : {}) },
+      signal: this.ctrl?.signal,
+    };
 
     try {
-      return await fetch(this.url(name), init);
+      const response = await fetch(this.url(name), init);
+      if (response.status === 401) this.handlers?.onClose({ reason: 'unauthenticated' });
+      return response;
     } catch {
       throw new TransportError('network');
     }
@@ -164,9 +171,10 @@ export class FetchTransport implements Transport {
     try {
       res = await fetch(this.url('stream'), {
         method: 'POST',
-        credentials: 'include',
+        credentials: 'omit',
         cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
+        redirect: 'error',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.credential}` },
         body: JSON.stringify(hello),
         signal: this.ctrl.signal,
       });
@@ -177,7 +185,7 @@ export class FetchTransport implements Transport {
     if (res.status !== 200 || !res.body) {
       let reason = reasonForStatus(res.status);
       // 补充约定 2：400 的响应体是一行 closed{bad_hello | protocol_unsupported}，403 是一行
-      // closed{origin_not_allowed}（与按状态码得到的相同）；401（未登录）、404（功能没开）、429（网关限流）的响应体是
+      // closed{forbidden}（与按状态码得到的相同）；401（未登录）、404（功能没开）、429（网关限流）的响应体是
       // JSON 错误、不是帧，只看状态码。400 只认这两个原因：被拒的连接不能因为响应体里写了别的（如 rotate）就立刻重连。
       if (res.status === 400) {
         const first = (await res.text().catch(() => '')).split('\n')[0] ?? '';

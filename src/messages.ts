@@ -42,6 +42,7 @@ export interface PromptView {
 
 export interface PopupState {
   connection: ConnectionState;
+  signingIn: boolean;
   supportedActions: ActionName[];
   account?: string;
   lastError?: string;
@@ -73,6 +74,8 @@ export type PageMessage =
   | { type: 'prompt:get'; id: string }
   | { type: 'prompt:answer'; id: string; answer: PromptAnswer }
   | { type: 'popup:state' }
+  | { type: 'popup:login' }
+  | { type: 'popup:logout' }
   | { type: 'popup:setServer'; origin: string; epoch: string }
   | { type: 'popup:showControls'; tabId: number; epoch: string }
   | { type: 'popup:resumeConversation'; conversation: string; epoch: string }

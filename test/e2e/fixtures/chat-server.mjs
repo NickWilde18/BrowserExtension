@@ -9,10 +9,12 @@
 //
 // 用法：node chat-server.mjs <端口>，就绪时打印一行 {"ready":true,…}
 import http from 'node:http';
+import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 const port = Number(process.argv[2] || 18963);
-const EXT_ORIGIN = 'chrome-extension://agagklnjfndomhambbpfhenaoclcbpmo';
+const codes = new Map();
+const credentials = new Map();
 const COOKIE = 'gfsessionid=sess-ok';
 const BASE = '/chat-service/browser/';
 /** install_id 的规范形态（小写带连字符）；不是的 frames / uploads / files 回 400（与 Chat 一致）。 */
@@ -30,12 +32,16 @@ const state = {
   account: 'first.user@example.test',
   holdApprovals: false,
   heldApprovals: [],
+  exchanges: 0,
+  authorizations: 0,
+  logouts: 0,
+  nextAuth: '',
 };
 
 /** 被拒时的响应：400 / 403 是一行 closed（与 Chat 一致），其余是 JSON 错误、不是帧。 */
 function reject(res, status) {
   res.statusCode = status;
-  const closed = { 400: 'bad_hello', 403: 'origin_not_allowed' }[status];
+  const closed = { 400: 'bad_hello', 403: 'forbidden' }[status];
   if (closed) {
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.end(JSON.stringify({ type: 'closed', reason: closed }) + '\n');
@@ -90,6 +96,32 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (url.pathname === '/chat/browser-extension/authorize') {
+    state.authorizations++;
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    const query = url.search.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    res.end(`<!doctype html><title>Authorize browser</title><form method="post" action="/chat/browser/authorize/${query}"><button name="decision" value="allow">Authorize browser</button><button name="decision" value="deny">Decline authorization</button></form>`);
+    return;
+  }
+  if (url.pathname === '/chat/browser/authorize/' && req.method === 'POST') {
+    const params = url.searchParams;
+    const decision = new URLSearchParams((await body(req)).toString()).get('decision');
+    const redirect = params.get('redirect_uri') || `http://127.0.0.1:${port}/chat/browser-extension/callback`;
+    const callback = new URL(redirect);
+    callback.searchParams.set('state', state.nextAuth === 'wrong_state' ? 'wrong-state' : params.get('state'));
+    state.nextAuth = '';
+    if (decision !== 'allow') callback.searchParams.set('error', 'access_denied');
+    else {
+      const code = randomBytes(32).toString('base64url');
+      codes.set(code, { installId: params.get('install_id'), challenge: params.get('code_challenge'), redirect: params.get('redirect_uri') || '' });
+      callback.searchParams.set('code', code);
+    }
+    res.writeHead(302, { Location: callback.href }); res.end(); return;
+  }
+  if (url.pathname === '/chat/browser-extension/callback') {
+    res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><title>Authorization complete</title>Return to your extension.'); return;
+  }
+
   if (url.pathname.startsWith('/__control/')) {
     const op = url.pathname.slice('/__control/'.length);
     res.setHeader('Content-Type', 'application/json');
@@ -103,6 +135,16 @@ const server = http.createServer(async (req, res) => {
       case 'rotate':
         send({ type: 'closed', reason: 'rotate' });
         endStream(false);
+        res.end('{"ok":true}');
+        return;
+      case 'revoke':
+        credentials.clear();
+        send({ type: 'closed', reason: 'revoked' });
+        endStream(false);
+        res.end('{"ok":true}');
+        return;
+      case 'next-auth':
+        state.nextAuth = url.searchParams.get('mode');
         res.end('{"ok":true}');
         return;
       case 'drop':
@@ -156,31 +198,38 @@ const server = http.createServer(async (req, res) => {
   }
 
   const name = url.pathname.slice(BASE.length);
-  const cookie = req.headers.cookie ?? '';
+  const credential = (req.headers.authorization ?? '').replace(/^Bearer /, '');
   state.requests.push({
-    path: url.pathname,
-    method: req.method,
-    origin: req.headers.origin ?? null,
-    cookie: cookie.includes(COOKIE),
+    path: url.pathname, method: req.method,
+    cookie: Boolean(req.headers.cookie),
+    authenticated: credentials.has(credential),
     xService: 'x-service' in req.headers,
   });
 
-  if (req.method !== 'POST' || !['stream', 'frames', 'uploads', 'files'].includes(name)) {
-    res.statusCode = 404;
-    res.end();
-    return;
+  if (req.method !== 'POST' || !['stream', 'frames', 'uploads', 'files', 'token', 'logout'].includes(name)) {
+    res.statusCode = 404; res.end(); return;
   }
-
-  // 网关：没有登录态就 401。
-  if (!cookie.includes(COOKIE)) {
-    reject(res, 401);
-    return;
+  if (name === 'token') {
+    const input = JSON.parse((await body(req)).toString());
+    const grant = codes.get(input.code); codes.delete(input.code);
+    if (!grant || grant.installId !== input.install_id || grant.redirect !== input.redirect_uri
+      || createHash('sha256').update(input.code_verifier).digest('base64url') !== grant.challenge) {
+      reject(res, 400); return;
+    }
+    const value = randomBytes(32).toString('base64url');
+    credentials.set(value, grant.installId);
+    state.exchanges++;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ credential: value, account: state.account })); return;
   }
-
-  // Chat：只认登记的插件来源。
-  if (req.headers.origin !== EXT_ORIGIN) {
-    reject(res, 403);
-    return;
+  // 每个请求校验独立凭据，不依赖 Cookie 或 Origin 白名单。
+  if (!credentials.has(credential)) { reject(res, 401); return; }
+  if (name === 'logout') {
+    const input = JSON.parse((await body(req)).toString());
+    if (input.install_id !== credentials.get(credential)) { reject(res, 403); return; }
+    credentials.delete(credential); state.logouts++;
+    send({ type: 'closed', reason: 'revoked' }); endStream(false);
+    res.setHeader('Content-Type', 'application/json'); res.end('{}'); return;
   }
 
   if (name === 'stream') {

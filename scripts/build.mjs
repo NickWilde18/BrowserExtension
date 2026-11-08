@@ -35,6 +35,8 @@ const outDir = path.resolve(root, argValue('--out') ?? 'dist');
 const platformOrigin = parsePlatformOrigin(argValue('--platform-origin') ?? process.env.PLATFORM_ORIGIN);
 const executionBackend = argValue('--execution-backend') ?? 'auto';
 const backgroundMode = argValue('--background-mode') ?? 'worker';
+const browser = argValue('--browser') ?? 'chromium';
+if (!['chromium', 'firefox', 'safari'].includes(browser)) throw new Error('browser 只能为 chromium/firefox/safari');
 const probeUrl = argValue('--probe-url');
 if (probeUrl && (!testHooks || !fakeTransport || backgroundMode !== 'event')) {
   throw new Error('probe-url 仅允许事件后台的 test-hooks + fake-transport 构建');
@@ -146,14 +148,8 @@ if (!testHooks) {
     throw new Error('生产构建的 background.js 里出现了 X-Service');
   }
 
-  // cookies 权限只用来监听会话 Cookie 的变化（计划第 9 节第 17 条）：产物里只能有 onChanged，不能有读写 Cookie 的调用。
-  const cookieCalls = bg.match(/cookies\s*\.\s*(get|getAll|set|remove|getAllCookieStores|getPartitionKey)\b/g);
-  if (cookieCalls) {
-    throw new Error(`生产构建的 background.js 里出现了读写 Cookie 的调用：${[...new Set(cookieCalls)].join('、')}`);
-  }
-
-  if (!bg.includes('cookies.onChanged')) {
-    throw new Error('生产构建的 background.js 里没有会话 Cookie 的监听');
+  if (/cookies\s*\./.test(bg)) {
+    throw new Error('生产构建的 background.js 里出现了 Cookie API');
   }
 }
 
@@ -171,7 +167,7 @@ for (const file of ['LICENSE', 'NOTICE']) {
 }
 
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
-const manifest = buildManifest({ version: pkg.version, platformOrigin, key: DEV_PUBLIC_KEY, executionBackend, backgroundMode });
+const manifest = buildManifest({ version: pkg.version, platformOrigin, key: DEV_PUBLIC_KEY, executionBackend, backgroundMode, browser });
 if (probeUrl) {
   await build({
     entryPoints: [path.join(root, 'test/probe/dom-extension-probe.ts')],

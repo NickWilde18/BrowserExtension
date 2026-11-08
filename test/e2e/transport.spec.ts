@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CHAT_PORT } from './global-setup';
 import { ACTIONS } from '../../src/protocol/frames';
-import { A, CONV, answer, refOf } from './helpers';
+import { A, CONV, answer, refOf, signIn } from './helpers';
 import type { Harness } from './helpers';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -83,13 +83,18 @@ test.afterAll(async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('没登录时连不上（401，等登录）；在平台网页登录后连上、收到 ready', async () => {
+test('平台网页 Cookie 不足以连接；插件独立授权后连上、收到 ready', async () => {
   const before = await until(status, (s: any) => s.state === 'waiting_login');
   expect(before).toMatchObject({ state: 'waiting_login', lastError: 'unauthenticated' });
 
   const page = await ctx.newPage();
   await page.goto(`${CHAT}/login`);
   await sw.evaluate(() => (globalThis as any).__bxTest.reconnect());
+  expect((await until(status, (v: any) => v.state === 'waiting_login')).state).toBe('waiting_login');
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
+  await signIn(ctx, popup);
+  await popup.close();
   const s = await until(status, (v: any) => v.state === 'connected');
   expect(s).toMatchObject({ state: 'connected', account: 'first.user@example.test' });
 
@@ -163,15 +168,21 @@ test('断线：按退避重连', async () => {
   expect((await until(status, (v: any) => v.state === 'connected')).state).toBe('connected');
 });
 
-test('401：停住、提示重新登录；之后按退避重试，登录态还在就连上', async () => {
+test('401：清掉凭据并停止重连；重新独立授权后恢复', async () => {
   const before = (await ctl('state')).streamCount;
   await ctl('next-stream', { status: '401' });
   await ctl('drop');
   const s = await until(status, (v: any) => v.state === 'waiting_login', 10_000);
   expect(s).toMatchObject({ state: 'waiting_login', lastError: 'unauthenticated' });
-  const st = await until(() => ctl('state'), (x) => x.streamCount === before + 1 && x.streamOpen, 15_000);
-  expect(st.streamCount).toBe(before + 1);
-  await until(status, (v: any) => v.state === 'connected');
+  expect(s.retryAt).toBeUndefined();
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  expect((await ctl('state')).streamCount).toBe(before);
+  expect(await sw.evaluate(async () => !!(await chrome.storage.local.get('connection.credential'))['connection.credential'])).toBe(false);
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
+  await signIn(ctx, popup);
+  await popup.close();
+  expect((await ctl('state')).streamCount).toBe(before + 1);
 });
 
 test('审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗', async () => {
@@ -225,8 +236,8 @@ test('stream 回 403（插件没在平台登记）：停住不重连，弹窗提
   const streams = async () => (await ctl('state')).requests.filter((r: any) => r.path.endsWith('/stream')).length;
   await ctl('next-stream', { status: '403' });
   await ctl('drop');
-  const s = await until(status, (v: any) => v.lastError === 'origin_not_allowed', 10_000);
-  expect(s).toMatchObject({ state: 'error', lastError: 'origin_not_allowed' });
+  const s = await until(status, (v: any) => v.lastError === 'forbidden', 10_000);
+  expect(s).toMatchObject({ state: 'error', lastError: 'forbidden' });
   expect(s.retryAt).toBeUndefined();
   const n = await streams();
   await new Promise((r) => setTimeout(r, 3000));
@@ -234,7 +245,7 @@ test('stream 回 403（插件没在平台登记）：停住不重连，弹窗提
 
   const popup = await ctx.newPage();
   await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
-  await expect(popup.locator('#state')).toHaveText('The platform has not registered this extension, so it stopped connecting; ask the platform administrators to register it, then click Reconnect');
+  await expect(popup.locator('#state')).toHaveText('The platform refused access. Check your device authorization, then click Reconnect.');
   await popup.locator('#reconnect').click();
   expect((await until(status, (v: any) => v.state === 'connected')).state).toBe('connected');
   await popup.close();
@@ -275,15 +286,38 @@ test('换了平台账号（ready.account 变了，补充约定 4）：清掉上�
   expect((await snapshot()).sites.conversation).toEqual({ [CONV]: [A] });
 });
 
-test('每个请求：只 POST 这四个路径、不带 X-Service、带插件的 Origin 和会话 Cookie（未登录那几次除外）', async () => {
+test('四通道只 POST、不带 X-Service 和 Cookie，全部用独立凭据', async () => {
   const st = await ctl('state');
-  expect(st.requests.length).toBeGreaterThan(5);
-  for (const r of st.requests) {
-    expect(PATHS).toContain(r.path);
+  const channels = st.requests.filter((r: any) => PATHS.includes(r.path));
+  expect(channels.length).toBeGreaterThan(5);
+  for (const r of channels) {
     expect(r.method).toBe('POST');
     expect(r.xService).toBe(false);
-    expect(r.origin).toBe(EXT_ORIGIN);
+    expect(r.cookie).toBe(false);
+    expect(r.authenticated).toBe(true);
   }
+  expect(channels.map((r: any) => r.path)).toEqual(expect.arrayContaining(PATHS));
+});
 
-  expect(st.requests.filter((r: any) => r.cookie).map((r: any) => r.path)).toEqual(expect.arrayContaining(PATHS));
+test('closed revoked 立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据', async () => {
+  await ctl('revoke');
+  const s = await until(status, (v: any) => v.state === 'waiting_login');
+  expect(s).toMatchObject({ state: 'waiting_login', lastError: 'revoked' });
+  const before = (await ctl('state')).streamCount;
+  await expect.poll(() => sw.evaluate(async () => ({
+    credential: !!(await chrome.storage.local.get('connection.credential'))['connection.credential'],
+    tabs: await (globalThis as any).__bxTest.tabs.list('0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0'),
+    attached: (globalThis as any).__bxTest.attachedCount(),
+    sites: await (globalThis as any).__bxTest.sites.list(),
+  }))).toEqual({ credential: false, tabs: [], attached: 0, sites: { always: [], conversation: {} } });
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  expect((await ctl('state')).streamCount).toBe(before);
+  const popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
+  await signIn(ctx, popup);
+  const logouts = (await ctl('state')).logouts;
+  await popup.locator('#logout').click();
+  await expect.poll(async () => (await status()).state).toBe('waiting_login');
+  await expect.poll(async () => (await ctl('state')).logouts).toBe(logouts + 1);
+  await popup.close();
 });
