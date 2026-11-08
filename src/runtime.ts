@@ -142,6 +142,7 @@ export class BrowserRuntime {
       autoMode: async () => (await this.local.get<boolean>('settings.autoMode')) ?? true,
       connected: () => !this.disposed && this.manager.connected,
       send: (frame) => this.manager.send(frame),
+      awaitingUser: (conversation, on) => this.controls.awaitingUser(conversation, on),
     });
     this.scheduler = new Scheduler(async (request, signal) => {
       const generation = this.generation;

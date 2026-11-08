@@ -14,7 +14,7 @@ import type { Transport } from '../connection/transport';
 import { isUnattachableUrl, siteOf } from '../policy/url';
 import type { SiteStore } from '../policy/sites';
 import { ActionError } from '../protocol/errors';
-import type { RequestFrame } from '../protocol/frames';
+import type { ApprovalNote, RequestFrame } from '../protocol/frames';
 import type { AbortReason } from '../scheduler';
 
 export interface Services {
@@ -93,6 +93,8 @@ export class ActionContext implements GateContext {
   private navigationTimedOut = false;
   /** 成功结果里要附给模型的说明（如下载没取回来的原因），runRequest 接在 message 后面。 */
   readonly notes: string[] = [];
+  /** 这个请求期间每次逐次确认的结果类别，runRequest 放进结果帧。 */
+  readonly approvals: ApprovalNote[] = [];
 
   constructor(readonly request: RequestFrame, readonly services: Services, outer: AbortSignal) {
     this.deadlineLeft = request.deadline_ms;
@@ -111,6 +113,10 @@ export class ActionContext implements GateContext {
 
   get conversationTitle(): string {
     return this.request.conversation_title;
+  }
+
+  noteApproval(note: ApprovalNote): void {
+    this.approvals.push(note);
   }
 
   readonly authWait = {

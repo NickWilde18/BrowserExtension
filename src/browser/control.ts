@@ -4,13 +4,21 @@ import type { ActionName, RequestFrame, ResultFrame } from '../protocol/frames';
 import { ActionError } from '../protocol/errors';
 
 export type ControlMode = 'assistant' | 'taking_over' | 'user' | 'observing';
-export interface ControlView { mode: ControlMode; title: string; action: ActionName | null }
-interface Entry extends ControlView { version: number; requestId?: string }
+export interface ControlView {
+  mode: ControlMode;
+  title: string;
+  action: ActionName | null;
+  /** 这段对话有确认窗开着、在等用户：控制条显示「等待你确认」，引导去确认窗，不在网页里重复授权。 */
+  waiting: boolean;
+}
+interface Entry { mode: ControlMode; title: string; action: ActionName | null; version: number; requestId?: string }
 const KEY = 'control.conversations';
 
 export class ConversationControl {
   readonly ready: Promise<void>;
   private readonly entries = new Map<string, Entry>();
+  /** 每段对话开着的确认窗个数（同一对话的多个请求可能同时在等）。只在内存：后台重启时确认窗也随之作废。 */
+  private readonly awaiting = new Map<string, number>();
   private readonly taking = new Map<string, Promise<void>>();
   private writing: Promise<void> = Promise.resolve();
   private disposed = false;
@@ -22,7 +30,16 @@ export class ConversationControl {
 
   view(conversation: string): ControlView {
     const e = this.entry(conversation);
-    return { mode: e.mode, title: e.title, action: e.action };
+    return { mode: e.mode, title: e.title, action: e.action, waiting: (this.awaiting.get(conversation) ?? 0) > 0 };
+  }
+
+  /** 确认门在弹出 / 收起确认窗时调用；只在「有没有在等」变化时通知刷新控制条。 */
+  awaitingUser(conversation: string, on: boolean): void {
+    const before = this.awaiting.get(conversation) ?? 0;
+    const after = on ? before + 1 : Math.max(0, before - 1);
+    if (after === 0) this.awaiting.delete(conversation);
+    else this.awaiting.set(conversation, after);
+    if ((before > 0) !== (after > 0) && !this.disposed) this.changed(conversation);
   }
 
   list(): Array<{ conversation: string; title: string; mode: ControlMode }> {

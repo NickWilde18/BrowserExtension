@@ -133,6 +133,20 @@ export interface ResultFrame {
   message?: string;
   page?: PageInfo;
   payload?: Record<string, unknown>;
+  /**
+   * 执行这个请求期间每次逐次确认的结果类别，按发生顺序；空数组表示这次没有需要确认的步骤。没跑到动作就回的结果
+   * （设备不支持、已停止）不带。只有种类和结论，不带站点、文件名、脚本（Chat 写进操作记录的「确认状态」）。
+   */
+  approvals?: ApprovalNote[];
+}
+
+/** 一次逐次确认的结果类别。 */
+export interface ApprovalNote {
+  kind: ApprovalKind;
+  /** review：平台自动审查放行；user：用户在确认窗里定（含到时没答、被取消）。 */
+  by: 'review' | 'user';
+  /** allow_always 只用于站点；self 只用于密码框「我自己输入」；timeout 是到时没答，和 deny 分开。 */
+  outcome: 'allow' | 'allow_always' | 'self' | 'deny' | 'timeout' | 'aborted';
 }
 
 export type OutboundFrame = HelloFrame | ProgressFrame | ApprovalRequestFrame | ResultFrame | ReleasedFrame | { type: 'pong' };

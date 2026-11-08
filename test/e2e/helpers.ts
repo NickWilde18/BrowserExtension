@@ -1,7 +1,7 @@
 // 端到端测试辅助：起带插件的浏览器、扮演 Chat 收发帧、操作确认小窗。
 
-import { chromium } from '@playwright/test';
-import type { BrowserContext, Page, Worker } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
+import type { BrowserContext, Locator, Page, Worker } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,14 +35,20 @@ export interface Harness {
 }
 
 /** 起一个装好插件的浏览器（持久化上下文），连上假 Chat（回 ready），审批默认回 ask_user。 */
-export async function launch(opts: { autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean; realViewport?: boolean; extensionDir?: string } = {}): Promise<Harness> {
+export async function launch(opts: {
+  autoApproval?: 'ask_user' | 'allow' | 'block' | 'none'; headless?: boolean; realViewport?: boolean; extensionDir?: string;
+  /** 浏览器界面语言（插件文案跟着它），如 zh-CN；不写用浏览器默认。 */
+  lang?: string;
+} = {}): Promise<Harness> {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bx-e2e-'));
   const ctx = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: opts.headless ?? true,
     // realViewport：不做 Playwright 的视口模拟，页面用真实窗口尺寸（与用户的浏览器一致）。
     viewport: opts.realViewport ? null : { width: 1200, height: 800 },
-    args: [`--disable-extensions-except=${opts.extensionDir ?? EXT_DIR}`, `--load-extension=${opts.extensionDir ?? EXT_DIR}`],
+    ...(opts.lang ? { locale: opts.lang } : {}),
+    args: [`--disable-extensions-except=${opts.extensionDir ?? EXT_DIR}`, `--load-extension=${opts.extensionDir ?? EXT_DIR}`,
+      ...(opts.lang ? [`--lang=${opts.lang}`] : [])],
   });
 
   // Playwright 自己也连着每个标签页：没有 dialog 监听时它会自动关掉对话框（它的默认行为），插件就看不到
@@ -129,11 +135,11 @@ export async function call(h: Harness, action: string, args: Record<string, unkn
 
 /** 发请求但不等结果（与确认小窗交互的用例用）。 */
 export async function send(h: Harness, action: string, args: Record<string, unknown> = {},
-  opts: { conversation?: string; deadlineMs?: number; authWaitMs?: number } = {}): Promise<string> {
+  opts: { conversation?: string; deadlineMs?: number; authWaitMs?: number; title?: string } = {}): Promise<string> {
   const requestId = rid();
-  await h.sw.evaluate(({ requestId, action, args, conversation, deadlineMs, authWaitMs }) => {
-    (globalThis as any).__bxTest.server.deliver({ type: 'request', request_id: requestId, action, args, conversation, deadline_ms: deadlineMs, auth_wait_ms: authWaitMs });
-  }, { requestId, action, args, conversation: opts.conversation ?? CONV, deadlineMs: opts.deadlineMs ?? 30_000, authWaitMs: opts.authWaitMs ?? 60_000 });
+  await h.sw.evaluate(({ requestId, action, args, conversation, deadlineMs, authWaitMs, title }) => {
+    (globalThis as any).__bxTest.server.deliver({ type: 'request', request_id: requestId, action, args, conversation, conversation_title: title, deadline_ms: deadlineMs, auth_wait_ms: authWaitMs });
+  }, { requestId, action, args, conversation: opts.conversation ?? CONV, deadlineMs: opts.deadlineMs ?? 30_000, authWaitMs: opts.authWaitMs ?? 60_000, title: opts.title });
   return requestId;
 }
 
@@ -185,6 +191,26 @@ export async function answer(h: Harness, label: string | RegExp): Promise<void> 
 /** 预先给对话授权站点（跳过站点授权小窗）。 */
 export async function allowSite(h: Harness, site: string, conversation = CONV): Promise<void> {
   await h.sw.evaluate(({ site, conversation }) => (globalThis as any).__bxTest.sites.grant(conversation, site, 'conversation'), { site, conversation });
+}
+
+/**
+ * 用真实鼠标点网页控制条的主按钮。控件在关闭的 shadow root 里定位不到，主按钮下面还有一行随字体折行的说明，
+ * 所以从底边往上逐步点，直到状态变了；只扫下半部（那里只有说明文字和主按钮，点到文字不触发任何操作）。
+ * 状态是异步变的：每点一下先等一会儿再判断，免得状态还没变就再点、点中布局变化后新出现的按钮。
+ */
+export async function clickPanelButton(page: Page, panel: Locator): Promise<void> {
+  await page.bringToFront();
+  const before = await panel.getAttribute('data-phase');
+  const box = await panel.boundingBox();
+  expect(box).not.toBeNull();
+  for (let offset = 12; offset < box!.height / 2; offset += 8) {
+    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height - offset);
+    for (let i = 0; i < 10; i++) {
+      if (await panel.getAttribute('data-phase') !== before) return;
+      await page.waitForTimeout(50);
+    }
+  }
+  throw new Error('没有点到控制条的主按钮');
 }
 
 /** AI 当前标签对应的 Playwright 页面。 */

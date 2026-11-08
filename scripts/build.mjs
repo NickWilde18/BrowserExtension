@@ -112,6 +112,8 @@ await build({
     chrome: 'extensionApi',
   },
   plugins: [injectedPlugin],
+  // 只有网页控制条用：校徽内联成 data URI，见 src/types/virtual.d.ts。
+  loader: { '.png': 'dataurl' },
   inject: [path.join(root, 'src/browser/api.ts')],
   // 只做语法级压缩（删掉 define 之后的死分支），不改名、不压空白：产物仍可读。
   minifySyntax: true,

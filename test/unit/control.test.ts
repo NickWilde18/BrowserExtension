@@ -25,6 +25,25 @@ describe('显式对话接管', () => {
     expect(control.view('A').mode).toBe('user');
   });
 
+  it('等确认是对话级计数：最后一个确认结束才撤销；只在显示变化时通知刷新；多余的撤销不变负数', async () => {
+    const changed = vi.fn();
+    const control = new ConversationControl(new MemoryKV(), async () => {}, changed);
+    await control.ready;
+    expect(control.view('A').waiting).toBe(false);
+    control.awaitingUser('A', true);
+    control.awaitingUser('A', true);
+    expect(control.view('A').waiting).toBe(true);
+    expect(control.view('B').waiting).toBe(false);
+    control.awaitingUser('A', false);
+    expect(control.view('A').waiting).toBe(true);
+    control.awaitingUser('A', false);
+    control.awaitingUser('A', false);
+    expect(control.view('A').waiting).toBe(false);
+    control.awaitingUser('A', true);
+    expect(control.view('A').waiting).toBe(true);
+    expect(changed.mock.calls).toEqual([['A'], ['A'], ['A']]);
+  });
+
   it('恢复后必须先成功读取；迟到旧读取不能解除新的接管', async () => {
     const control = new ConversationControl(new MemoryKV(), async () => {}, () => {});
     await control.takeOver('A');

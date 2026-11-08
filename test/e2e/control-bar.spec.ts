@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { A, B, CONV2, aiPage, allowSite, call, launch, type Harness } from './helpers';
+import { A, B, CONV2, aiPage, allowSite, call, clickPanelButton, launch, type Harness } from './helpers';
 let h: Harness;
+
 test.beforeEach(async () => { h = await launch(); await allowSite(h, A); await allowSite(h, A, CONV2); });
 test.afterEach(async () => { await h.close(); });
 
@@ -9,8 +10,7 @@ test('最后一页关闭后，可信popup可恢复指定对话，全局恢复不
   const page = await aiPage(h, '/form.html');
   const panel = page.locator('#browser-assistant-controls');
   await expect(panel).toBeVisible();
-  const box = await panel.boundingBox();
-  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height - 30);
+  await clickPanelButton(page, panel);
   await expect(panel).toHaveAttribute('data-mode', 'user');
   await page.close();
   await h.sw.evaluate(async () => { await (globalThis as any).__bxTest.stop(); await (globalThis as any).__bxTest.resume(); });
@@ -60,13 +60,8 @@ test('归属页控制条确认对话级接管；恢复先观察、不重放动�
   const page = await aiPage(h, '/form.html');
   const panel = page.locator('#browser-assistant-controls');
   await expect(panel).toBeVisible({ timeout: 2000 });
-  // 控件位于关闭的 shadow root；用真实鼠标点击底部主按钮，不通过页面脚本伪造事件。
-  const clickAction = async () => {
-    await page.bringToFront();
-    const box = await panel.boundingBox();
-    expect(box).not.toBeNull();
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height - 30);
-  };
+  // 控件位于关闭的 shadow root；用真实鼠标点击主按钮，不通过页面脚本伪造事件。
+  const clickAction = () => clickPanelButton(page, panel);
   await clickAction();
   await expect(panel).toHaveAttribute('data-mode', 'user');
   expect(await h.sw.evaluate(() => (globalThis as any).__bxTest.attachedCount())).toBe(1);

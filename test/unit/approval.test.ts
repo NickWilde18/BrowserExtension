@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Gate } from '../../src/approval/gate';
-import type { GateContext } from '../../src/approval/gate';
+import type { ApprovalNote, GateContext } from '../../src/approval/gate';
 import { chromeWindowOps, PromptManager } from '../../src/approval/prompts';
 import type { WindowOps } from '../../src/approval/prompts';
 import { ApprovalRegistry } from '../../src/approval/registry';
@@ -158,10 +158,16 @@ class FakeWindows implements WindowOps {
   }
 }
 
-function gateCtx(authMs = 60_000): GateContext & { pauses: number; resumes: number } {
+function gateCtx(authMs = 60_000): GateContext & { pauses: number; resumes: number; notes: ApprovalNote[] } {
   let left = authMs;
+  const notes: ApprovalNote[] = [];
   const ctx = {
     requestId: RID,
+    conversation: 'C1',
+    notes,
+    noteApproval(note: ApprovalNote) {
+      notes.push(note);
+    },
     signal: new AbortController().signal,
     authWait: { remainingMs: () => left, consume: (ms: number) => { left -= ms; } },
     pauses: 0,
@@ -183,38 +189,85 @@ async function until(cond: () => boolean): Promise<void> {
 }
 
 describe('Gate：先问审查、再问用户', () => {
-  function setup(opts: { autoMode: boolean; connected: boolean; reply?: 'allow' | 'block' | 'ask_user' | null }) {
+  /** reply 不写时 Chat 回 ask_user（手动挡对话）；null 表示 Chat 不回。 */
+  function setup(opts: { autoMode?: boolean; connected: boolean; reply?: 'allow' | 'block' | 'ask_user' | null }) {
+    const reply = opts.reply === undefined ? 'ask_user' : opts.reply;
     const sentFrames: OutboundFrame[] = [];
+    const awaiting: Array<[string, boolean]> = [];
     const registry = new ApprovalRegistry();
     const windows = new FakeWindows();
     const prompts = new PromptManager(windows);
     const gate = new Gate({
       registry,
       prompts,
-      autoMode: async () => opts.autoMode,
+      // 删除插件开关（方案 A）待用户明确同意；在那之前开关保持现有默认值「开」。
+      autoMode: async () => opts.autoMode ?? true,
       connected: () => opts.connected,
+      awaitingUser: (conversation, on) => { awaiting.push([conversation, on]); },
       send: async (f) => {
         sentFrames.push(f);
-        if (f.type === 'approval_request' && opts.reply) {
-          queueMicrotask(() => registry.receive({ type: 'approval', request_id: f.request_id, approval_id: f.approval_id, kind: f.kind, decision: opts.reply as 'allow', reason: 'r1' }));
+        if (f.type === 'approval_request' && reply) {
+          queueMicrotask(() => registry.receive({ type: 'approval', request_id: f.request_id, approval_id: f.approval_id, kind: f.kind, decision: reply as 'allow', reason: 'r1' }));
         }
       },
     });
-    return { gate, prompts, windows, sentFrames };
+    return { gate, prompts, windows, sentFrames, awaiting };
   }
 
   it('审查放行：不弹小窗、不发进度，计时暂停又恢复', async () => {
-    const { gate, windows, sentFrames } = setup({ autoMode: true, connected: true, reply: 'allow' });
+    const { gate, windows, sentFrames, awaiting } = setup({ connected: true, reply: 'allow' });
     const ctx = gateCtx();
     const r = await gate.confirm(ctx, { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     expect(r).toEqual({ result: 'allow', by: 'review', scope: 'conversation' });
     expect(windows.opened).toHaveLength(0);
     expect(sentFrames.map((f) => f.type)).toEqual(['approval_request']);
     expect([ctx.pauses, ctx.resumes]).toEqual([1, 1]);
+    expect(awaiting).toEqual([]);
+    expect(ctx.notes).toEqual([{ kind: 'site', by: 'review', outcome: 'allow' }]);
+  });
+
+  // 方案 A（删掉插件开关、只认对话档位）待用户明确同意后启用。
+  it.skip('连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关', async () => {
+    const { gate, prompts, windows, sentFrames } = setup({ autoMode: false, connected: true });
+    const p = gate.confirm(gateCtx(), { kind: 'download', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => windows.opened.length > 0);
+    expect(sentFrames[0]?.type).toBe('approval_request');
+    prompts.answer(windows.opened[0]!.id, windows.opened[0]!.windowId, 'allow');
+    await expect(p).resolves.toMatchObject({ result: 'allow', by: 'user' });
+  });
+
+  it('弹窗等用户期间告诉控制条这段对话在等确认，答完撤销', async () => {
+    const { gate, prompts, windows, awaiting } = setup({ connected: true });
+    const p = gate.confirm(gateCtx(), { kind: 'upload', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => windows.opened.length > 0);
+    expect(awaiting).toEqual([['C1', true]]);
+    prompts.answer(windows.opened[0]!.id, windows.opened[0]!.windowId, 'deny');
+    await p;
+    expect(awaiting).toEqual([['C1', true], ['C1', false]]);
+  });
+
+  it('每次确认把结果类别记到请求上下文（不含站点、文件名等内容）', async () => {
+    const { gate, prompts, windows } = setup({ connected: true });
+    const ctx = gateCtx();
+    const first = gate.confirm(ctx, { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => windows.opened.length > 0);
+    prompts.answer(windows.opened[0]!.id, windows.opened[0]!.windowId, 'allow_always');
+    await first;
+    const second = gate.confirm(ctx, { kind: 'script', site: 'https://a.test', reviewDetail: { source: 'x' }, promptDetail: { source: 'x' } });
+    await until(() => windows.opened.length > 1);
+    prompts.answer(windows.opened[1]!.id, windows.opened[1]!.windowId, 'deny');
+    await second;
+    await gate.confirm({ ...ctx, authWait: { remainingMs: () => 0, consume: () => {} } },
+      { kind: 'download', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    expect(ctx.notes).toEqual([
+      { kind: 'site', by: 'user', outcome: 'allow_always' },
+      { kind: 'script', by: 'user', outcome: 'deny' },
+      { kind: 'download', by: 'user', outcome: 'timeout' },
+    ]);
   });
 
   it('审查拦下：小窗带理由，用户定；前后发 awaiting_user / working', async () => {
-    const { gate, prompts, windows, sentFrames } = setup({ autoMode: true, connected: true, reply: 'block' });
+    const { gate, prompts, windows, sentFrames } = setup({ connected: true, reply: 'block' });
     const p = gate.confirm(gateCtx(), { kind: 'script', site: 'https://a.test', reviewDetail: { source: 'x' }, promptDetail: { source: 'x' } });
     await until(() => windows.opened.length > 0);
     const w = windows.opened[0]!;

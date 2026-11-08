@@ -2,19 +2,26 @@
 //
 //  1. 弹窗开关「Auto Mode 下由平台审查代替我确认」开着、连接可用时，先发 approval_request 并原地等
 //     （最多 15 秒）：allow 直接继续、不弹小窗；block（带理由）、ask_user、超时、发不出去都回到小窗。
-//  2. 小窗由用户定；等用户点选按 auth_wait_ms 计时，超时按拒绝。
+//  2. 小窗由用户定；等用户点选按 auth_wait_ms 计时，到时没答记为超时（approval_timeout），和主动拒绝分开。
 //  3. 审查与等用户的耗时都算在 auth_wait_ms 里，不算动作超时：期间暂停动作计时。
 //
-// 等用户之前发 progress{awaiting_user}，用户点完发 progress{working}（契约 3.2）。
+// 等用户之前发 progress{awaiting_user}，用户点完发 progress{working}（契约 3.2）；确认窗开着的期间同时告诉网页
+// 控制条这段对话在等确认。每次确认的结果类别记到请求上下文，随结果帧交给 Chat 写进操作记录（只有种类和结论）。
 
 import { APPROVAL_REPLY_TIMEOUT_MS } from '../config';
-import type { ApprovalKind, OutboundFrame } from '../protocol/frames';
+import type { ApprovalKind, ApprovalNote, OutboundFrame } from '../protocol/frames';
 import type { ApprovalRegistry } from './registry';
 import type { PromptManager, PromptOutcome } from './prompts';
+
+export type { ApprovalNote };
 
 /** 一次确认所在的请求。 */
 export interface GateContext {
   requestId: string;
+  /** 请求所属的对话：控制条按它显示「等待你确认」。 */
+  conversation: string;
+  /** 记下这次确认的结果类别。 */
+  noteApproval(note: ApprovalNote): void;
   /** 请求已有的对话标题，只用于本地确认窗。 */
   conversationTitle?: string;
   signal: AbortSignal;
@@ -37,6 +44,20 @@ export interface GateDeps {
   /** 现在有没有可用的连接（没连上时不问审查、不发进度）。 */
   connected(): boolean;
   send(frame: OutboundFrame): Promise<void>;
+  /** 对话开始 / 结束等用户确认（确认窗开着的这段时间）。 */
+  awaitingUser?(conversation: string, on: boolean): void;
+}
+
+function noteOf(kind: ApprovalKind, r: ConfirmResult): ApprovalNote {
+  if (r.result === 'allow') {
+    return { kind, by: r.by, outcome: r.by === 'user' && r.scope === 'always' ? 'allow_always' : 'allow' };
+  }
+
+  if (r.result === 'self') {
+    return { kind, by: 'user', outcome: 'self' };
+  }
+
+  return { kind, by: 'user', outcome: r.why === 'user' ? 'deny' : r.why };
 }
 
 export interface ConfirmRequest {
@@ -55,7 +76,9 @@ export class Gate {
     ctx.pauseDeadline();
     const started = Date.now();
     try {
-      return await this.run(ctx, req, started);
+      const result = await this.run(ctx, req, started);
+      ctx.noteApproval(noteOf(req.kind, result));
+      return result;
     } finally {
       ctx.authWait.consume(Date.now() - started);
       ctx.resumeDeadline();
@@ -96,7 +119,15 @@ export class Gate {
       ...(ctx.conversationTitle ? { conversationTitle: ctx.conversationTitle } : {}),
       ...(reason !== undefined ? { reason } : {}),
     };
-    const { id, outcome } = await this.deps.prompts.ask(spec);
+    this.deps.awaitingUser?.(ctx.conversation, true);
+    let asked: Awaited<ReturnType<PromptManager['ask']>>;
+    try {
+      asked = await this.deps.prompts.ask(spec);
+    } finally {
+      this.deps.awaitingUser?.(ctx.conversation, false);
+    }
+
+    const { id, outcome } = asked;
     await this.progress(ctx.requestId, 'working');
 
     return this.interpret(req.kind, id, outcome);

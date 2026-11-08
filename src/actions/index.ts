@@ -115,8 +115,9 @@ async function executeRequest(services: Services, request: RequestFrame, signal:
       result.message = message;
     }
 
+    result.approvals = ctx.approvals;
     if (JSON.stringify(result).length > MAX_RESULT_FRAME_BYTES) {
-      return errorResult(request.request_id, new ActionError('action_failed', 'The result was too large to send; read a smaller part of the page.'));
+      return { ...errorResult(request.request_id, new ActionError('action_failed', 'The result was too large to send; read a smaller part of the page.')), approvals: ctx.approvals };
     }
 
     return result;
@@ -134,7 +135,7 @@ async function executeRequest(services: Services, request: RequestFrame, signal:
       }
     }
 
-    return errorResult(request.request_id, e, page);
+    return { ...errorResult(request.request_id, e, page), approvals: ctx.approvals };
   } finally {
     ctx.dispose();
   }
