@@ -1,6 +1,8 @@
 @import url("theme.css");
 
-body { width: 360px; height: 600px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+:root { --edge: #b4aebb; }
+@media (prefers-color-scheme: dark) { :root { --edge: #6f6677; } }
+body { width: 360px; height: 600px; display: flex; flex-direction: column; position: relative; overflow: hidden; border: 1px solid var(--edge); }
 main { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 16px 17px; position: relative; z-index: 1; overflow-wrap: anywhere; }
 .watermark { position: absolute; right: 0; top: 220px; width: 265px; opacity: var(--watermark-opacity); filter: grayscale(1); pointer-events: none; }
 @media (prefers-color-scheme: dark) { .watermark { filter: grayscale(1) invert(1); } }
