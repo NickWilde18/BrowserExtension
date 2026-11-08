@@ -190,7 +190,7 @@ async function until(cond: () => boolean): Promise<void> {
 
 describe('Gate：先问审查、再问用户', () => {
   /** reply 不写时 Chat 回 ask_user（手动挡对话）；null 表示 Chat 不回。 */
-  function setup(opts: { autoMode?: boolean; connected: boolean; reply?: 'allow' | 'block' | 'ask_user' | null }) {
+  function setup(opts: { connected: boolean; reply?: 'allow' | 'block' | 'ask_user' | null }) {
     const reply = opts.reply === undefined ? 'ask_user' : opts.reply;
     const sentFrames: OutboundFrame[] = [];
     const awaiting: Array<[string, boolean]> = [];
@@ -200,8 +200,6 @@ describe('Gate：先问审查、再问用户', () => {
     const gate = new Gate({
       registry,
       prompts,
-      // 用户已选择方案 A；移除本机开关检查被自动审批器阻止，现阶段仍测原有 gate 的开启路径。
-      autoMode: async () => opts.autoMode ?? true,
       connected: () => opts.connected,
       awaitingUser: (conversation, on) => { awaiting.push([conversation, on]); },
       send: async (f) => {
@@ -226,9 +224,8 @@ describe('Gate：先问审查、再问用户', () => {
     expect(ctx.notes).toEqual([{ kind: 'site', by: 'review', outcome: 'allow' }]);
   });
 
-  // 用户已选择方案 A；删除 autoMode 检查被自动审批器阻止，此用例保留为待完成项，不能视作通过。
-  it.skip('连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关', async () => {
-    const { gate, prompts, windows, sentFrames } = setup({ autoMode: false, connected: true });
+  it('连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关', async () => {
+    const { gate, prompts, windows, sentFrames } = setup({ connected: true });
     const p = gate.confirm(gateCtx(), { kind: 'download', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     await until(() => windows.opened.length > 0);
     expect(sentFrames[0]?.type).toBe('approval_request');
@@ -283,7 +280,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('确认窗带上请求已有的会话标题；没有标题时不补造来源', async () => {
-    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
+    const { gate, prompts, windows } = setup({ connected: true });
     const ctx = { ...gateCtx(), conversationTitle: '课程 <b>报名</b>' };
     const first = gate.confirm(ctx, { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     await until(() => windows.opened.length > 0);
@@ -300,15 +297,15 @@ describe('Gate：先问审查、再问用户', () => {
     await second;
   });
 
-  it('开关关掉或没连上：不发审批请求，直接问用户；站点的两种允许映射到范围', async () => {
-    const off = setup({ autoMode: false, connected: true, reply: 'allow' });
-    const p1 = off.gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
-    await until(() => off.windows.opened.length > 0);
-    off.prompts.answer(off.windows.opened[0]!.id, off.windows.opened[0]!.windowId, 'allow_always');
+  it('Chat 回 ask_user 时站点保留两档允许；没连上时不发审批请求而直接问用户', async () => {
+    const manual = setup({ connected: true });
+    const p1 = manual.gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
+    await until(() => manual.windows.opened.length > 0);
+    manual.prompts.answer(manual.windows.opened[0]!.id, manual.windows.opened[0]!.windowId, 'allow_always');
     await expect(p1).resolves.toMatchObject({ result: 'allow', scope: 'always' });
-    expect(off.sentFrames.some((f) => f.type === 'approval_request')).toBe(false);
+    expect(manual.sentFrames[0]?.type).toBe('approval_request');
 
-    const offline = setup({ autoMode: true, connected: false, reply: 'allow' });
+    const offline = setup({ connected: false, reply: 'allow' });
     const p2 = offline.gate.confirm(gateCtx(), { kind: 'site', site: 'https://a.test', reviewDetail: {}, promptDetail: {} });
     await until(() => offline.windows.opened.length > 0);
     offline.prompts.answer(offline.windows.opened[0]!.id, offline.windows.opened[0]!.windowId, 'allow_once');
@@ -317,7 +314,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('等用户超时、用户关掉小窗都按拒绝', async () => {
-    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
+    const { gate, prompts, windows } = setup({ connected: true });
     await expect(gate.confirm(gateCtx(30), { kind: 'upload', site: 's', reviewDetail: {}, promptDetail: {} }))
       .resolves.toEqual({ result: 'deny', why: 'timeout' });
 
@@ -328,7 +325,7 @@ describe('Gate：先问审查、再问用户', () => {
   });
 
   it('密码框「我自己输入」：小窗留着，切到完成阶段', async () => {
-    const { gate, prompts, windows } = setup({ autoMode: false, connected: true });
+    const { gate, prompts, windows } = setup({ connected: true });
     const p = gate.confirm(gateCtx(), { kind: 'password', site: 's', reviewDetail: { field: 'pw' }, promptDetail: { field: 'pw' } });
     await until(() => windows.opened.length > 0);
     const w = windows.opened[0]!;

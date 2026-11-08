@@ -139,7 +139,6 @@ export class BrowserRuntime {
     });
     const gate = new Gate({
       registry: this.approvals, prompts: this.prompts,
-      autoMode: async () => (await this.local.get<boolean>('settings.autoMode')) ?? true,
       connected: () => !this.disposed && this.manager.connected,
       send: (frame) => this.manager.send(frame),
       awaitingUser: (conversation, on) => this.controls.awaitingUser(conversation, on),

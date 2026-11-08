@@ -176,7 +176,6 @@ test('401：停住、提示重新登录；之后按退避重试，登录态还�
 
 test('审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗', async () => {
   await grantA();
-  await sw.evaluate(() => (globalThis as any).__bxTest.setAutoMode(true));
   await ctl('hold-approvals', { on: '1' });
   try {
     await request('open', { url: `${A}/download.html` });

@@ -15,7 +15,6 @@ import { localKV, sessionKV } from './storage';
 
 const local = localKV();
 const session = sessionKV();
-const AUTO_MODE_KEY = 'settings.autoMode';
 const INTRO_KEY = 'settings.introSeen';
 const STOPPED_KEY = 'state.stopped';
 const identity = new Identity(local);
@@ -164,7 +163,6 @@ async function popupState(): Promise<PopupState> {
     connection: status.state,
     supportedActions: [...r.backend.actions],
     displayName: await identity.displayName(),
-    autoMode: (await local.get<boolean>(AUTO_MODE_KEY)) ?? true,
     stopped, introSeen: (await local.get<boolean>(INTRO_KEY)) === true,
     sites: { always: grants.always, conversation: [...new Set(Object.values(grants.conversation).flat())].filter((s) => !grants.always.includes(s)) },
     siteGroups, pageSite: site,
@@ -207,9 +205,6 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
       if (ok && settings.permissionGranted) r.manager.reconnectNow();
       return { ok };
     }
-    case 'popup:setAutoMode':
-      await local.set(AUTO_MODE_KEY, msg.on === true);
-      return { ok: true };
     case 'popup:stop': await stop(); return { ok: true };
     case 'popup:resume': await resume(); return { ok: true };
     case 'popup:share': {
@@ -272,7 +267,6 @@ if (__TEST_HOOKS__) {
     popupState, stop, resume,
     get sites() { return settings.runtime?.sites; },
     get tabs() { return settings.runtime?.tabs; },
-    setAutoMode: (on: boolean) => local.set(AUTO_MODE_KEY, on),
     detachLog,
     attachedCount: () => settings.runtime?.sessions.attachedCount ?? 0,
     cdp: (tabId: number, method: string, params: Record<string, unknown> = {}) => settings.runtime?.sessions.peek(tabId)?.cdp.send(method, params),

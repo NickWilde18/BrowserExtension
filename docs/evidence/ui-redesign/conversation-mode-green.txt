@@ -1,0 +1,22 @@
+目标单元与文案：
+pnpm exec vitest run test/unit/approval.test.ts test/unit/locales.test.ts
+ Test Files  2 passed (2)
+      Tests  24 passed (24)
+
+目标集成初跑（包含串行传输用例但漏选登录前置）：
+  1 failed
+    test/e2e/transport.spec.ts:177:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗
+  4 passed (20.6s)
+
+4 条审批用例通过：审查放行、拦下转人工、旧本机关闭值不影响 ask_user、15 秒无结论转人工。
+传输用例的失败发生在 grantA，未进入产品审批逻辑：
+Error: worker.evaluate: TypeError: Cannot read properties of undefined (reading 'grant')
+
+按该文件的串行夹具要求带登录前置重跑：
+pnpm exec playwright test test/e2e/transport.spec.ts --grep '没登录时连不上|审查结论从轮换' --reporter=line
+Running 2 tests using 1 worker
+[1/2] test/e2e/transport.spec.ts:86:1 › 没登录时连不上（401，等登录）；在平台网页登录后连上、收到 ready
+[2/2] test/e2e/transport.spec.ts:177:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗
+  2 passed (2.7s)
+
+pnpm typecheck 通过，pnpm run build:test 通过；未重跑整套单元或全部集成测试。

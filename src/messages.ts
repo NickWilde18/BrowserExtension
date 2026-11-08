@@ -46,7 +46,6 @@ export interface PopupState {
   account?: string;
   lastError?: string;
   displayName: string;
-  autoMode: boolean;
   stopped: boolean;
   introSeen: boolean;
   sites: { always: string[]; conversation: string[] };
@@ -78,7 +77,6 @@ export type PageMessage =
   | { type: 'popup:showControls'; tabId: number; epoch: string }
   | { type: 'popup:resumeConversation'; conversation: string; epoch: string }
   | { type: 'popup:setDisplayName'; name: string }
-  | { type: 'popup:setAutoMode'; on: boolean }
   | { type: 'popup:stop' }
   | { type: 'popup:resume' }
   | { type: 'popup:share' }

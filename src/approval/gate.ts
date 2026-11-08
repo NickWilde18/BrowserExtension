@@ -1,7 +1,7 @@
 // 逐次确认的流程（契约 3.3、计划 4.5 与 4.8）：
 //
-//  1. 弹窗开关「Auto Mode 下由平台审查代替我确认」开着、连接可用时，先发 approval_request 并原地等
-//     （最多 15 秒）：allow 直接继续、不弹小窗；block（带理由）、ask_user、超时、发不出去都回到小窗。
+//  1. 连接可用时先发 approval_request 并原地等（最多 15 秒），由 Chat 按对话档位决定是否交自动审查。
+//     插件没有独立开关；allow 直接继续、不弹小窗；block（带理由）、ask_user、超时、发不出去都回到小窗。
 //  2. 小窗由用户定；等用户点选按 auth_wait_ms 计时，到时没答记为超时（approval_timeout），和主动拒绝分开。
 //  3. 审查与等用户的耗时都算在 auth_wait_ms 里，不算动作超时：期间暂停动作计时。
 //
@@ -40,7 +40,6 @@ export type ConfirmResult =
 export interface GateDeps {
   registry: ApprovalRegistry;
   prompts: PromptManager;
-  autoMode(): Promise<boolean>;
   /** 现在有没有可用的连接（没连上时不问审查、不发进度）。 */
   connected(): boolean;
   send(frame: OutboundFrame): Promise<void>;
@@ -88,7 +87,7 @@ export class Gate {
   private async run(ctx: GateContext, req: ConfirmRequest, started: number): Promise<ConfirmResult> {
     let reason: string | undefined;
 
-    if (this.deps.connected() && await this.deps.autoMode()) {
+    if (this.deps.connected()) {
       const verdict = await this.askReview(ctx, req);
       if (verdict.decision === 'allow') {
         return { result: 'allow', by: 'review', scope: 'conversation' };

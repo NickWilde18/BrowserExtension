@@ -419,13 +419,16 @@ test('Auto Mode：审查拦下时小窗显示理由，由用户定', async () =>
   expect((await result(h, id)).outcome).toBe('ok');
 });
 
-test('Auto Mode：开关关掉不发审批请求，直接问用户', async () => {
-  h = await launch({ autoApproval: 'allow' });
-  await h.sw.evaluate(() => (globalThis as any).__bxTest.setAutoMode(false));
+test('审批只认 Chat：本机旧关闭设置不影响请求，ask_user 仍需插件确认', async () => {
+  h = await launch({ autoApproval: 'ask_user' });
+  // 模拟升级前保存的本机开关；新版本不得读取它绕过对话档位。
+  await h.sw.evaluate(() => chrome.storage.local.set({ 'settings.autoMode': false }));
   const id = await send(h, 'open', { url: `${A}/form.html` });
+  const win = await approvalWindow(h);
+  await expect(win.locator('#buttons')).toBeVisible();
+  expect(await sent(h, 'approval_request')).toHaveLength(1);
   await answer(h, 'Allow');
   expect((await result(h, id)).outcome).toBe('ok');
-  expect(await sent(h, 'approval_request')).toHaveLength(0);
 });
 
 test('Auto Mode：Chat 迟迟不回审批，15 秒后回到小窗', async () => {
