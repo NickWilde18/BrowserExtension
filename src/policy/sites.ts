@@ -1,5 +1,6 @@
 // 站点授权只存在插件本地；清理/撤销先失效旧代数，防迟到 grant 重新加回权限。
 import type { KV } from '../storage';
+import { Revocations } from './revocations';
 
 const ALWAYS_KEY = 'sites.always';
 const CONVERSATION_KEY = 'sites.conversation';
@@ -7,6 +8,8 @@ export type GrantScope = 'always' | 'conversation';
 export interface SiteGrants { always: string[]; conversation: Record<string, string[]> }
 
 export class SiteStore {
+  /** 撤销与清理同步通知在途读取（browser/read-leases）。 */
+  readonly revocations = new Revocations();
   private revision = 0;
   private writing: Promise<void> = Promise.resolve();
   constructor(private readonly local: KV, private readonly session: KV) {}
@@ -42,6 +45,7 @@ export class SiteStore {
 
   revoke(site: string): Promise<void> {
     this.revision++;
+    this.revocations.emit({ kind: 'site', site });
     return this.update(async () => {
       const always = (await this.local.get<string[]>(ALWAYS_KEY)) ?? [];
       await this.local.set(ALWAYS_KEY, always.filter((s) => s !== site));
@@ -57,6 +61,7 @@ export class SiteStore {
 
   clear(): Promise<void> {
     this.revision++;
+    this.revocations.emit({ kind: 'all' });
     return this.update(async () => {
       await this.local.remove(ALWAYS_KEY);
       await this.session.remove(CONVERSATION_KEY);

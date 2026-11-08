@@ -7,6 +7,7 @@
 
 import type { KV } from '../storage';
 import { abortError } from '../actions/context';
+import { Revocations } from '../policy/revocations';
 
 /** 分组只是展示能力，创建与命名共用此等待预算。每次创建重新尝试，不缓存浏览器能力。 */
 const GROUP_WAIT_MS = 1000;
@@ -130,6 +131,8 @@ export const chromeTabOps: TabOps = {
 };
 
 export class TabRegistry {
+  /** 移除标签归属时同步通知在途读取（browser/read-leases）。 */
+  readonly revocations = new Revocations();
   private cache: Record<string, ConversationTabs> | null = null;
   private readonly creating = new Set<{
     conversation: string; ctrl: AbortController; tabId?: number; groupId?: number;
@@ -233,7 +236,7 @@ export class TabRegistry {
       cancelCreated = () => {
         // 同步撤回临时登记，后续请求不会先借用这个正在取消的标签。
         if (registered) {
-          this.removeTab(c, tabId);
+          this.removeTab(conversation, c, tabId);
           void this.save().catch(() => undefined);
         }
         void this.ops.close(tabId).catch(() => undefined);
@@ -326,7 +329,7 @@ export class TabRegistry {
       closed = true;
     }
 
-    this.removeTab(c, tabId);
+    this.removeTab(conversation, c, tabId);
     await this.save();
     return closed;
   }
@@ -347,6 +350,7 @@ export class TabRegistry {
     // 先删登记再动标签：解散标签组会触发 onUpdated(groupId)，那时登记里还有这个对话的话，
     // 会被当成「用户把标签拖出了 AI 组」处理。
     delete all[conversation];
+    this.revocations.emit({ kind: 'conversation', conversation });
     await this.save();
 
     let closed = 0;
@@ -387,9 +391,9 @@ export class TabRegistry {
   async unshare(tabId: number): Promise<void> {
     const all = await this.all();
     let owned = false;
-    for (const c of Object.values(all)) {
+    for (const [id, c] of Object.entries(all)) {
       owned ||= c.tabs.includes(tabId);
-      this.removeTab(c, tabId);
+      this.removeTab(id, c, tabId);
     }
 
     if ((await this.kv.get<number>(PENDING_SHARE_KEY)) === tabId) {
@@ -443,6 +447,7 @@ export class TabRegistry {
     const conversations = Object.values(await this.all());
     // 先清登记再解散组：解散触发的 onUpdated(groupId) 不会被当成「拖出 AI 组」。
     this.cache = {};
+    this.revocations.emit({ kind: 'all' });
     await this.save();
     await this.kv.remove(LAST_KEY);
     await this.kv.remove(LAST_TITLE_KEY);
@@ -471,9 +476,9 @@ export class TabRegistry {
     }
     const all = await this.all();
     let changed = false;
-    for (const c of Object.values(all)) {
+    for (const [id, c] of Object.entries(all)) {
       if (c.tabs.includes(tabId) || c.shared.includes(tabId)) {
-        this.removeTab(c, tabId);
+        this.removeTab(id, c, tabId);
         changed = true;
       }
     }
@@ -529,7 +534,7 @@ export class TabRegistry {
     const all = await this.all();
     for (const [id, c] of Object.entries(all)) {
       if (c.tabs.includes(tabId) && !c.ungrouped?.includes(tabId) && c.groupId !== null && groupId !== c.groupId) {
-        this.removeTab(c, tabId);
+        this.removeTab(id, c, tabId);
         await this.save();
         return id;
       }
@@ -549,13 +554,16 @@ export class TabRegistry {
     return Object.values(await this.all()).filter((c) => c.tabs.length + c.shared.length > 0).length;
   }
 
-  private removeTab(c: ConversationTabs, tabId: number): void {
+  /** 只有标签确实属于该对话时才撤销，避免别的对话按同一编号误撤当前读取。 */
+  private removeTab(conversation: string, c: ConversationTabs, tabId: number): void {
+    const member = c.tabs.includes(tabId) || c.shared.includes(tabId);
     c.tabs = c.tabs.filter((t) => t !== tabId);
     if (c.ungrouped) c.ungrouped = c.ungrouped.filter((t) => t !== tabId);
     c.shared = c.shared.filter((t) => t !== tabId);
     if (c.active === tabId) {
       c.active = c.tabs.at(-1) ?? c.shared.at(-1) ?? null;
     }
+    if (member) this.revocations.emit({ kind: 'tab', tabId, conversation });
   }
 
   private blank(): ConversationTabs {
