@@ -92,6 +92,40 @@ describe('独立安装认证', () => {
     expect(await s.auth.credential()).toBeUndefined();
   });
 
+  // 服务端拒绝回调不带 code；三种浏览器都应结束等待，不交换/保存凭据，随后可以正常再登录。
+  it.each(['chromium', 'firefox', 'safari'] as const)('%s 拒绝回调结束等待、拒绝重放不发凭据、可以重新授权', async (kind) => {
+    const s = await setup(kind);
+    const denied = s.auth.login();
+    await flush();
+    const oldState = s.url().searchParams.get('state')!;
+    s.callback({ code: '', error: 'access_denied' });
+    expect(await denied).toEqual({ ok: false });
+    expect(s.auth.signingIn).toBe(false);
+    expect(s.fetcher).not.toHaveBeenCalled();
+    expect(await s.auth.credential()).toBeUndefined();
+    expect(s.onAuthenticated).not.toHaveBeenCalled();
+    if (kind === 'safari') {
+      expect(s.close).toHaveBeenCalledWith(7);
+      expect(s.updated.size + s.removed.size).toBe(0);
+    }
+
+    const replay = s.auth.login();
+    await flush();
+    expect(s.url().searchParams.get('state')).not.toBe(oldState);
+    s.callback({ code: '', error: 'access_denied', state: oldState });
+    expect(await replay).toEqual({ ok: false });
+    expect(s.auth.signingIn).toBe(false);
+    expect(s.fetcher).not.toHaveBeenCalled();
+    expect(await s.auth.credential()).toBeUndefined();
+
+    const retry = s.auth.login();
+    await flush();
+    s.callback();
+    expect(await retry).toEqual({ ok: true });
+    expect(s.fetcher).toHaveBeenCalledTimes(1);
+    expect(s.onAuthenticated).toHaveBeenCalledTimes(1);
+  });
+
   it('identity 关窗拒绝后可以重新登录', async () => {
     const s = await setup('firefox');
     s.launch.mockRejectedValueOnce(new Error('cancelled'));
