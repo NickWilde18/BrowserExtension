@@ -214,7 +214,7 @@ async function render(): Promise<void> {
   const readOnly = st.supportedActions.length === 1 && st.supportedActions[0] === 'read';
   const stateKey = st.connection === 'error' && st.lastError === 'forbidden'
     ? 'stateForbidden' : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
-  $('state').textContent = t(stateKey);
+  $('state').textContent = t(st.signingIn ? 'signingIn' : stateKey);
   $('accountRow').hidden = !available || !st.account;
   $('account').textContent = available ? st.account ?? '' : '';
   $('connectionMarker').className = st.connection === 'connecting' ? 'spinner' : `dot${available ? '' : ' warn'}`;
@@ -222,8 +222,9 @@ async function render(): Promise<void> {
   $('openPlatform').hidden = available && st.shareTarget.kind !== 'next';
   $('reconnect').hidden = !['replaced', 'error', 'offline'].includes(st.connection);
   $('login').hidden = st.connection !== 'waiting_login';
-  button('login').disabled = st.signingIn || st.serverSwitching || !st.serverPermissionGranted;
-  button('login').textContent = t(st.signingIn ? 'signingIn' : 'login');
+  // 登录中仍可点：授权页被导航走或关不掉时，用户能中止这次并重新开始，不必等超时。
+  button('login').disabled = st.serverSwitching || !st.serverPermissionGranted;
+  button('login').textContent = t(st.signingIn ? 'restartLogin' : 'login');
   $('logout').hidden = st.connection === 'waiting_login';
   button('logout').disabled = st.serverSwitching;
   $('executionHint').hidden = !readOnly && st.supportedActions.length > 0;
@@ -262,7 +263,7 @@ for (const [id, type, error] of [['login', 'popup:login', 'loginFailed'], ['logo
     button(id).disabled = true;
     $('authError').hidden = true;
     try {
-      const result = await send<{ ok: boolean }>({ type });
+      const result = await send<{ ok: boolean }>({ type: id === 'login' && latest?.signingIn ? 'popup:restartLogin' : type });
       if (!result?.ok) throw new Error('authentication_failed');
     } catch { $('authError').textContent = t(error); $('authError').hidden = false; }
     finally { await render(); }

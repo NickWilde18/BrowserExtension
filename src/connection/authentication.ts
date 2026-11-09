@@ -3,6 +3,8 @@ import type { KV } from '../storage';
 
 const CREDENTIAL_KEY = 'connection.credential';
 const CALLBACK_PATH = '/chat/browser-extension/callback';
+/** 授权页打开后最长等待；用户离开授权页又不关标签时，到点放弃并关掉它。 */
+const LOGIN_TIMEOUT_MS = 10 * 60_000;
 type Result = { ok: boolean };
 interface StoredCredential { origin: string; installId: string; credential: string; account: string }
 interface Options {
@@ -47,6 +49,16 @@ export class BrowserAuthentication {
     });
     this.pending = task;
     return task;
+  }
+
+  /** 登录中再点：作废进行中的授权并关掉它的授权页，再开一次新的授权。 */
+  restart(): Promise<Result> {
+    if (this.pending) {
+      this.generation++;
+      this.controller?.abort();
+      this.pending = null;
+    }
+    return this.login();
   }
 
   /** 立即废弃迟到的授权；清理完成前不能启动下一次登录。 */
@@ -111,7 +123,9 @@ export class BrowserAuthentication {
 
     let tab: number | undefined;
     let keepAlive: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
+      timeout = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
       // 授权页打开期间沿用后台的原生 API 保活，避免等待用户操作的事件后台被挂起。
       keepAlive = setInterval(() => { void chrome.runtime.getPlatformInfo(); }, 20_000);
       const callback = redirect
@@ -139,6 +153,7 @@ export class BrowserAuthentication {
       return { ok: true };
     } finally {
       clearInterval(keepAlive);
+      clearTimeout(timeout);
       if (this.controller === ctrl) this.controller = null;
       // Safari 的授权页在 state 检查与交换结束后关闭；不会关闭用户原来的平台标签页。
       if (tab !== undefined) await chrome.tabs.remove(tab).catch(() => undefined);

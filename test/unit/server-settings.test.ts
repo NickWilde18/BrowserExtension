@@ -58,6 +58,22 @@ describe('单活动服务器设置', () => {
     expect(calls.at(-1)).toBe(`start ${settings.runtime?.epoch}`);
   });
 
+  // Safari 重启早期可能读到无权限；之后权限可用时，弹窗操作要能重新读到并启动连接，不必重装扩展。
+  it('启动时无权限、之后有了：重新检查后更新状态并启动运行期，只启动一次', async () => {
+    const { settings, hasPermission, calls } = setup();
+    hasPermission.mockResolvedValueOnce(false);
+    await settings.ready;
+    expect(settings.permissionGranted).toBe(false);
+    expect(calls).toEqual(['create https://first.test']);
+    expect(await settings.refreshPermission()).toBe(true);
+    expect(settings.permissionGranted).toBe(true);
+    expect(await settings.refreshPermission()).toBe(true);
+    expect(calls).toEqual(['create https://first.test', 'start epoch-1']);
+    hasPermission.mockResolvedValueOnce(false);
+    expect(await settings.refreshPermission()).toBe(false);
+    expect(settings.permissionGranted).toBe(false);
+  });
+
   it('权限拒绝或旧epoch不改变连接和授权，不重试权限', async () => {
     const { settings, clear, hasPermission } = setup();
     await settings.ready;

@@ -176,11 +176,17 @@ async function handlePopup(msg: PageMessage): Promise<unknown> {
   await settings.ready;
   const r = settings.runtime!;
   if (settings.switching && msg.type !== 'popup:state') return { ok: false, error: 'switching' };
+  if (msg.type === 'popup:state' || msg.type === 'popup:login' || msg.type === 'popup:restartLogin' || msg.type === 'popup:reconnect') {
+    await settings.refreshPermission();
+  }
   switch (msg.type) {
     case 'popup:state': return popupState();
     case 'popup:login':
       if (!settings.permissionGranted) return { ok: false };
       return r.authentication.login();
+    case 'popup:restartLogin':
+      if (!settings.permissionGranted) return { ok: false };
+      return r.authentication.restart();
     case 'popup:logout': return r.logout();
     case 'popup:setServer': return settings.select(msg.origin, msg.epoch);
     case 'popup:resumeConversation': {

@@ -164,6 +164,55 @@ describe('独立安装认证', () => {
     expect(s.updated.size + s.removed.size).toBe(0);
   });
 
+  // 用户在 Safari 授权页里点侧栏去了别的页面：标签还在、不会到回调，等待必须有尽头。
+  it('Safari 授权页被导航走后 10 分钟超时结束等待、关标签、可再登录', async () => {
+    const s = await setup('safari');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'], shouldAdvanceTime: true });
+    try {
+      const pending = s.auth.login();
+      await flush();
+      for (const fn of s.updated) fn(7, { url: `${ORIGIN}/chat/pdf` });
+      await vi.advanceTimersByTimeAsync(10 * 60_000 - 1_000);
+      expect(s.auth.signingIn).toBe(true);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await flush();
+      expect(s.auth.signingIn).toBe(false);
+      expect(await pending).toEqual({ ok: false });
+      expect(s.close).toHaveBeenCalledWith(7);
+      expect(s.updated.size + s.removed.size).toBe(0);
+    } finally { vi.useRealTimers(); }
+    const retry = s.auth.login();
+    await flush();
+    s.callback();
+    expect(await retry).toEqual({ ok: true });
+  });
+
+  it('登录中“中止并重新登录”：关掉旧授权页、开新的，只有新的能完成', async () => {
+    const s = await setup('safari');
+    let next = 7;
+    const create = (globalThis as any).chrome.tabs.create as ReturnType<typeof vi.fn>;
+    const urls: string[] = [];
+    create.mockImplementation(async ({ url }: { url: string }) => { urls.push(url); return { id: next++ }; });
+    const first = s.auth.login();
+    await flush();
+    for (const fn of s.updated) fn(7, { url: `${ORIGIN}/chat/pdf` });
+    const second = s.auth.restart();
+    await flush();
+    expect(await first).toEqual({ ok: false });
+    expect(s.close).toHaveBeenCalledWith(7);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(s.auth.signingIn).toBe(true);
+    const state = new URL(urls[1]!).searchParams.get('state')!;
+    expect(state).not.toBe(new URL(urls[0]!).searchParams.get('state'));
+    const cb = new URL(`${ORIGIN}/chat/browser-extension/callback`);
+    cb.searchParams.set('state', state); cb.searchParams.set('code', 'synthetic-code');
+    for (const fn of [...s.updated]) fn(8, { url: cb.href });
+    expect(await second).toEqual({ ok: true });
+    expect(s.fetcher).toHaveBeenCalledTimes(1);
+    expect(s.close).toHaveBeenCalledWith(8);
+    expect(s.auth.signingIn).toBe(false);
+  });
+
   it('退出用 Bearer 发 install_id，网络失败也清本地凭据与授权', async () => {
     const s = await setup();
     const login = s.auth.login(); await flush(); s.callback(); await login;

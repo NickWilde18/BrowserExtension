@@ -45,6 +45,7 @@
   "stateWaiting_login": { "message": "请登录并授权此浏览器插件" },
   "login": { "message": "登录" },
   "logout": { "message": "退出插件登录" },
+  "restartLogin": { "message": "中止并重新登录" },
   "signingIn": { "message": "正在等待授权…" },
   "loginFailed": { "message": "授权未完成，请重新点击登录后重试。" },
   "logoutFailed": { "message": "已退出本机登录，但未能确认服务器撤销成功。请在平台浏览器扩展页面移除此设备。" },

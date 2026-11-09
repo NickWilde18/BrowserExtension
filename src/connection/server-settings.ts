@@ -106,6 +106,18 @@ export class ServerSettings<T extends RuntimeSession> {
     }
   }
 
+  /** 浏览器的授权可能晚于后台启动才可读（Safari 重启早期会读到无权限）；弹窗操作前重读，权限到位就启动连接。 */
+  async refreshPermission(): Promise<boolean> {
+    await this.ready;
+    const runtime = this.runtime;
+    if (this.switching || !runtime) return this.permissionGranted;
+    const granted = await this.options.hasPermission(this.origin);
+    if (this.switching || this.runtime !== runtime) return this.permissionGranted;
+    if (granted && !this.permissionGranted) runtime.start();
+    this.permissionGranted = granted;
+    return granted;
+  }
+
   private async initialize(): Promise<void> {
     const pending = await this.options.local.get<string>(PENDING_KEY);
     const saved = await this.options.local.get<string>(ORIGIN_KEY);

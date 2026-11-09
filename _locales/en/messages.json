@@ -45,6 +45,7 @@
   "stateWaiting_login": { "message": "Sign in to authorize this browser extension" },
   "login": { "message": "Sign in" },
   "logout": { "message": "Sign out of extension" },
+  "restartLogin": { "message": "Cancel and sign in again" },
   "signingIn": { "message": "Waiting for authorization…" },
   "loginFailed": { "message": "Authorization did not complete. Sign in again to retry." },
   "logoutFailed": { "message": "Signed out locally, but server revocation could not be confirmed. Remove this device from the platform’s browser extension page." },

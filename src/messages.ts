@@ -75,6 +75,7 @@ export type PageMessage =
   | { type: 'prompt:answer'; id: string; answer: PromptAnswer }
   | { type: 'popup:state' }
   | { type: 'popup:login' }
+  | { type: 'popup:restartLogin' }
   | { type: 'popup:logout' }
   | { type: 'popup:setServer'; origin: string; epoch: string }
   | { type: 'popup:showControls'; tabId: number; epoch: string }
