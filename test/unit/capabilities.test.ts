@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runRequest } from '../../src/actions';
 import { createExecutionBackend } from '../../src/browser/backend';
 import { ACTIONS } from '../../src/protocol/frames';
-import { Identity } from '../../src/identity';
+import { Identity, MemoryKeyStore } from '../../src/identity';
 import { MemoryKV } from '../../src/storage';
 import type { Services } from '../../src/actions/context';
 import type { RequestFrame } from '../../src/protocol/frames';
@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe('设备动作能力边界', () => {
   it('hello 区分旧版缺字段、空能力和只读能力', async () => {
     vi.stubGlobal('chrome', { runtime: { getManifest: () => ({ version: '0.1.0' }) } });
-    const identity = new Identity(new MemoryKV());
+    const identity = new Identity(new MemoryKV(), new MemoryKeyStore());
     await identity.setDisplayName('Test browser');
     expect(await identity.hello()).not.toHaveProperty('capabilities');
     expect(await identity.hello([])).toMatchObject({ capabilities: { actions: [] } });

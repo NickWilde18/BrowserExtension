@@ -1,17 +1,19 @@
+import { createPublicKey, verify } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BrowserAuthentication } from '../../src/connection/authentication';
-import { Identity } from '../../src/identity';
+import { Identity, MemoryKeyStore, installProofMessage } from '../../src/identity';
 import { MemoryKV } from '../../src/storage';
 
 const ORIGIN = 'https://platform.test';
-const INSTALL = '66666666-7777-4888-9999-aaaaaaaaaaaa';
 const redirect = 'https://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.chromiumapp.org/';
 const flush = async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 0)); };
 
 async function setup(kind: 'chromium' | 'firefox' | 'safari' = 'chromium') {
   const local = new MemoryKV();
-  await local.set('identity.installId', INSTALL);
   await local.set('identity.displayName', 'Test browser');
+  const keys = new MemoryKeyStore();
+  const identity = new Identity(local, keys);
+  const install = await identity.installId();
   let complete!: (url: string) => void;
   let launchUrl = '';
   const updated = new Set<(id: number, change: { url?: string }) => void>();
@@ -34,7 +36,7 @@ async function setup(kind: 'chromium' | 'firefox' | 'safari' = 'chromium') {
   });
   const fetcher = vi.fn(async () => Response.json({ credential: 'synthetic-fixture', account: 'user@example.test' }));
   vi.stubGlobal('fetch', fetcher);
-  const auth = new BrowserAuthentication({ origin: ORIGIN, local, identity: new Identity(local), onAuthenticated, onInvalidated });
+  const auth = new BrowserAuthentication({ origin: ORIGIN, local, identity, onAuthenticated, onInvalidated });
   const callback = (params: Record<string, string> = {}) => {
     const url = new URL(kind === 'safari' ? `${ORIGIN}/chat/browser-extension/callback` : getRedirectURL());
     url.searchParams.set('state', new URL(launchUrl).searchParams.get('state')!);
@@ -43,7 +45,7 @@ async function setup(kind: 'chromium' | 'firefox' | 'safari' = 'chromium') {
     if (kind === 'safari') for (const fn of updated) fn(7, { url: url.href });
     else complete(url.href);
   };
-  return { auth, local, launch, fetcher, onAuthenticated, onInvalidated, close, callback, url: () => new URL(launchUrl), updated, removed };
+  return { auth, local, keys, install, launch, fetcher, onAuthenticated, onInvalidated, close, callback, url: () => new URL(launchUrl), updated, removed };
 }
 
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -58,7 +60,7 @@ describe('独立安装认证', () => {
     const query = s.url().searchParams;
     expect(s.url().pathname).toBe('/chat/browser-extension/authorize');
     expect(query.get('browser')).toBe(kind);
-    expect(query.get('install_id')).toBe(INSTALL);
+    expect(query.get('install_id')).toBe(s.install);
     expect(query.get('code_challenge_method')).toBe('S256');
     expect(query.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(query.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -72,8 +74,15 @@ describe('独立安装认证', () => {
     const body = JSON.parse(String(init.body));
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.code_verifier));
     expect(Buffer.from(digest).toString('base64url') === query.get('code_challenge')).toBe(true);
-    expect(body.install_id).toBe(INSTALL);
+    expect(body.install_id).toBe(s.install);
     expect(body.redirect_uri).toBe(query.get('redirect_uri') ?? '');
+    // 持有证明：raw 公钥 + 对「域分隔/install_id/授权码」的 P1363 签名，Chat 侧同一判据能验过。
+    expect(Object.keys(body).sort()).toEqual(['code', 'code_verifier', 'install_id', 'install_key', 'install_proof', 'redirect_uri']);
+    expect(body.install_key).toMatch(/^[A-Za-z0-9_-]{87}$/);
+    expect(body.install_proof).toMatch(/^[A-Za-z0-9_-]{86}$/);
+    const spki = Buffer.concat([Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex'), Buffer.from(body.install_key, 'base64url')]);
+    expect(verify('sha256', installProofMessage(s.install, 'synthetic-code'), { key: createPublicKey({ key: spki, format: 'der', type: 'spki' }), dsaEncoding: 'ieee-p1363' },
+      Buffer.from(body.install_proof, 'base64url'))).toBe(true);
     expect((await s.auth.credential()) === 'synthetic-fixture').toBe(true);
     expect(s.onAuthenticated).toHaveBeenCalledTimes(1);
     if (kind === 'safari') {
@@ -224,7 +233,7 @@ describe('独立安装认证', () => {
     expect(url).toBe(`${ORIGIN}/chat-service/browser/logout`);
     expect(init.credentials).toBe('omit');
     expect(new Headers(init.headers).get('authorization') === 'Bearer synthetic-fixture').toBe(true);
-    expect(JSON.parse(String(init.body))).toEqual({ install_id: INSTALL });
+    expect(JSON.parse(String(init.body))).toEqual({ install_id: s.install });
   });
 
   it('切服销毁后迟到换凭据不能写入或重连', async () => {
@@ -255,12 +264,13 @@ describe('独立安装认证', () => {
   it('凭据绑定平台 origin 和 install_id；重启沿用，另一平台不发出', async () => {
     const s = await setup();
     const login = s.auth.login(); await flush(); s.callback(); await login;
-    const options = { local: s.local, identity: new Identity(s.local), onAuthenticated: vi.fn(), onInvalidated: vi.fn() };
+    const options = { local: s.local, identity: new Identity(s.local, s.keys), onAuthenticated: vi.fn(), onInvalidated: vi.fn() };
     const same = new BrowserAuthentication({ ...options, origin: ORIGIN });
     const other = new BrowserAuthentication({ ...options, origin: 'https://other.test' });
     expect((await same.credential()) === 'synthetic-fixture').toBe(true);
     expect(await other.credential()).toBeUndefined();
-    await s.local.set('identity.installId', '11111111-2222-4333-8444-555555555555');
-    expect(await same.credential()).toBeUndefined();
+    // 安装密钥丢了（等于重装）：install_id 变了，旧凭据不再发出。
+    const reinstalled = new BrowserAuthentication({ ...options, identity: new Identity(s.local, new MemoryKeyStore()), origin: ORIGIN });
+    expect(await reinstalled.credential()).toBeUndefined();
   });
 });

@@ -1,0 +1,66 @@
+{
+  "description": "浏览器真签的换凭据持有证明样本（设计稿 539-INST 2.1–2.3）。install_key = raw 公钥（65 字节未压缩点），install_proof = ECDSA P-256/SHA-256 对 \"chat-browser-install-proof/v1\\n<install_id>\\n<code>\" 的签名（IEEE P1363，64 字节），均为无填充 base64url；install_id = SHA-256(raw 公钥) 前 16 字节置 UUIDv8 版本位与 RFC 9562 变体位。同一 browser 的样本是同一把密钥（install_id 相同）。由 test/probe/install-proof-samples.mjs 生成。",
+  "generated": "2026-11-11",
+  "samples": [
+    {
+      "browser": "chromium",
+      "step": "first-run",
+      "source": "extension identity.prove (dist-test-fetch)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+      "code": "hZ4ea6FIrbJB4Y89q-NTC6KciYwIbrvVWh_MdnBZqfM",
+      "install_id": "c444ed2b-a136-886e-90f2-4fed830246f0",
+      "install_key": "BDi8j1My8F_6MgHp5KTPEdJA-jcx-1Mm77AsBUqz9WAAyVbnju3mN7az8evy9v8uDLSYdtA2ytl_OR5NAmlcTzM",
+      "install_proof": "4HWg4gJsX7wO-EhBmRWemF2LbE1V02bNnR7oBH1YPZynOJhQOF0hXq620Iq5PKLRpYB9LPQkOJycHXflA3gykg"
+    },
+    {
+      "browser": "chromium",
+      "step": "first-run",
+      "source": "extension identity.prove (dist-test-fetch)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+      "code": "2e8_t3vWchRqWIgknBMEkO9NteMk47lPHkYvaX27X1w",
+      "install_id": "c444ed2b-a136-886e-90f2-4fed830246f0",
+      "install_key": "BDi8j1My8F_6MgHp5KTPEdJA-jcx-1Mm77AsBUqz9WAAyVbnju3mN7az8evy9v8uDLSYdtA2ytl_OR5NAmlcTzM",
+      "install_proof": "Tkda3ZpaP1__jNup9-33DNEpwHjrWrCYXlRfpqaeYyjp3jt37VeEDAXkxoqV3-4_9eeQ-2GbSX9OAMWZ57vVQg"
+    },
+    {
+      "browser": "chromium",
+      "step": "after-browser-restart",
+      "source": "extension identity.prove (dist-test-fetch)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.0.0 Safari/537.36",
+      "code": "mCIHVG50WnMJgv49yCxVv84eAoDMJ7D7vU17AmLvqdk",
+      "install_id": "c444ed2b-a136-886e-90f2-4fed830246f0",
+      "install_key": "BDi8j1My8F_6MgHp5KTPEdJA-jcx-1Mm77AsBUqz9WAAyVbnju3mN7az8evy9v8uDLSYdtA2ytl_OR5NAmlcTzM",
+      "install_proof": "qiaVSUtFvRZm_z3C9hq51Tp-hoZr1ticKryTLpG68wlihiYPxDYvQcmgW5jM3H9i9lN1Zd9YpJfzha4Ml40rCw"
+    },
+    {
+      "browser": "firefox",
+      "step": "first-run",
+      "source": "test/probe/install-key.mjs (event page)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:161.0) Gecko/20100101 Firefox/161.0",
+      "code": "probe-bff0e72d-4378-4f7c-a309-ef7f345aad62",
+      "install_id": "dbbb239b-e5ac-80f6-bb3c-7533ab054c81",
+      "install_key": "BLCafjVohxRU9jRXJgbiOrDDHn3rFhumXn9axW5V-cwFhi0S9qekWIQY_kqpG3yWLnk_ToQPa_cmUfOatg2uFbE",
+      "install_proof": "lgnHQqhL8TVyQkAJoVB9oqCzu_fAyYHJ51HWdpOzYICWjVvwXQIyX93EBCr3547rIS5nlpc6ravXp5WAyeWrYg"
+    },
+    {
+      "browser": "firefox",
+      "step": "after-browser-restart",
+      "source": "test/probe/install-key.mjs (event page)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:161.0) Gecko/20100101 Firefox/161.0",
+      "code": "probe-714f2157-8601-4696-9dac-5fa97c5ed42a",
+      "install_id": "dbbb239b-e5ac-80f6-bb3c-7533ab054c81",
+      "install_key": "BLCafjVohxRU9jRXJgbiOrDDHn3rFhumXn9axW5V-cwFhi0S9qekWIQY_kqpG3yWLnk_ToQPa_cmUfOatg2uFbE",
+      "install_proof": "Wm-Klbidy6EQXvFcNq5MN2PdHocKhMVjAyXgnvPr1BFEvkos_bqoa1IgKcNuLm6G7F2odNsjehuoqCP1Nu70aA"
+    },
+    {
+      "browser": "firefox",
+      "step": "after-upgrade",
+      "source": "test/probe/install-key.mjs (event page)",
+      "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:161.0) Gecko/20100101 Firefox/161.0",
+      "code": "probe-be00e9db-c9e6-4bc2-967e-4409c7b8ff6f",
+      "install_id": "dbbb239b-e5ac-80f6-bb3c-7533ab054c81",
+      "install_key": "BLCafjVohxRU9jRXJgbiOrDDHn3rFhumXn9axW5V-cwFhi0S9qekWIQY_kqpG3yWLnk_ToQPa_cmUfOatg2uFbE",
+      "install_proof": "ZQirWrec9x-E-EYij57giw0GREuPYNrl26-vWIQ5ddSqSrOSbQwG1c2jpIw2pHWbSlhAifSYQcpeSUTI0rn7ww"
+    }
+  ]
+}

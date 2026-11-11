@@ -1,3 +1,4 @@
+import { base64url } from '../identity';
 import type { Identity } from '../identity';
 import type { KV } from '../storage';
 
@@ -17,9 +18,6 @@ interface Options {
 
 function randomValue(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(32)));
-}
-function base64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /** 每个运行期只有一次进行中的授权；凭据只属于签发它的平台和安装。 */
@@ -138,10 +136,14 @@ export class BrowserAuthentication {
         || result.searchParams.get('state') !== state || result.searchParams.has('error')) return { ok: false };
       const code = result.searchParams.get('code');
       if (!code) return { ok: false };
+      // 持有证明：用安装私钥对 install_id 与本次授权码签名（授权码只能换一次，签名随之只能用一次）。
+      const proof = await this.options.identity.prove(code);
+      if (!active() || proof.install_id !== installId) return { ok: false };
       const response = await fetch(`${this.options.origin}/chat-service/browser/token`, {
         method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
         headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ code, code_verifier: verifier, install_id: installId, redirect_uri: redirect }),
+        body: JSON.stringify({ code, code_verifier: verifier, install_id: installId, redirect_uri: redirect,
+          install_key: proof.install_key, install_proof: proof.install_proof }),
       });
       if (!response.ok) return { ok: false };
       const body: unknown = await response.json();
