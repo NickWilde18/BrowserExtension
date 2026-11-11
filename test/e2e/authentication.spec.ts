@@ -114,3 +114,34 @@ test('install_id 由安装公钥算出、私钥不可导出；重启浏览器后
   expect(after.exchanges).toBe(before.exchanges + 2);
   expect(after.proofRejections).toBe(before.proofRejections);
 });
+
+// 587-KEYLOSS=A：IndexedDB 里的安装密钥被清掉，重启后照旧用缓存的 install_id 和凭据；只在下一次换凭据时换新 id。
+test('密钥被清掉后重启：凭据仍可用、install_id 不变；退出再登录时才生成新密钥、换新 install_id', async ({}, info) => {
+  const before = await fixture();
+  await signIn(ctx, popup);
+  const first = (await fixture()).lastExchange;
+  await sw.evaluate(() => new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('identity'); req.onsuccess = () => resolve(); req.onerror = () => reject(req.error); req.onblocked = () => reject(new Error('blocked'));
+  }));
+
+  await ctx.close();
+  ctx = await chromium.launchPersistentContext(info.outputPath('profile'), {
+    channel: 'chromium', headless: true,
+    args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`],
+  });
+  sw = ctx.serviceWorkers()[0] ?? await ctx.waitForEvent('serviceworker');
+  popup = await ctx.newPage();
+  await popup.goto(`chrome-extension://${new URL(sw.url()).host}/popup.html`);
+  await expect.poll(async () => (await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'popup:state' }))).connection).toBe('connected');
+  expect(await sw.evaluate(() => (globalThis as any).__bxTest.identity.installId())).toBe(first.install_id);
+  expect((await fixture()).exchanges).toBe(before.exchanges + 1);
+
+  await popup.evaluate(() => chrome.runtime.sendMessage({ type: 'popup:logout' }));
+  await expect(popup.locator('#login')).toBeVisible();
+  await signIn(ctx, popup);
+  const after = await fixture();
+  expect(after.lastExchange.install_id).not.toBe(first.install_id);
+  expect(after.lastExchange.install_id).toBe(installIdOf(after.lastExchange.install_key));
+  expect(await sw.evaluate(() => (globalThis as any).__bxTest.identity.installId())).toBe(after.lastExchange.install_id);
+  expect(after.proofRejections).toBe(before.proofRejections);
+});

@@ -269,8 +269,33 @@ describe('独立安装认证', () => {
     const other = new BrowserAuthentication({ ...options, origin: 'https://other.test' });
     expect((await same.credential()) === 'synthetic-fixture').toBe(true);
     expect(await other.credential()).toBeUndefined();
-    // 安装密钥丢了（等于重装）：install_id 变了，旧凭据不再发出。
-    const reinstalled = new BrowserAuthentication({ ...options, identity: new Identity(s.local, new MemoryKeyStore()), origin: ORIGIN });
-    expect(await reinstalled.credential()).toBeUndefined();
+  });
+
+  // 587-KEYLOSS=A：IndexedDB 里的密钥被清掉，启动后照旧用缓存的 install_id 和凭据；只在下一次换凭据时换新 id。
+  it('缓存凭据在、密钥被清掉：启动后凭据仍可用；重新登录换凭据时才生成新密钥、换新 install_id', async () => {
+    const s = await setup();
+    const login = s.auth.login(); await flush(); s.callback(); await login;
+    s.keys.pair = undefined;
+    const restarted = { local: s.local, identity: new Identity(s.local, s.keys), onAuthenticated: vi.fn(), onInvalidated: vi.fn(async () => undefined) };
+    const auth = new BrowserAuthentication({ ...restarted, origin: ORIGIN });
+    expect((await auth.credential()) === 'synthetic-fixture').toBe(true);
+    expect(await restarted.identity.installId()).toBe(s.install);
+    expect(s.keys.pair).toBeUndefined();
+
+    await auth.logout();
+    s.fetcher.mockClear();
+    const relogin = auth.login(); await flush();
+    const authorizeId = s.url().searchParams.get('install_id');
+    expect(authorizeId).not.toBe(s.install);
+    s.callback();
+    expect(await relogin).toEqual({ ok: true });
+    const body = JSON.parse(String((s.fetcher.mock.calls as unknown as [string, RequestInit][])[0]![1].body));
+    expect(body.install_id).toBe(authorizeId);
+    const spki = Buffer.concat([Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex'), Buffer.from(body.install_key, 'base64url')]);
+    expect(verify('sha256', installProofMessage(body.install_id, 'synthetic-code'), { key: createPublicKey({ key: spki, format: 'der', type: 'spki' }), dsaEncoding: 'ieee-p1363' },
+      Buffer.from(body.install_proof, 'base64url'))).toBe(true);
+    expect(await restarted.identity.installId()).toBe(authorizeId);
+    expect(await s.local.get('identity.installId')).toBe(authorizeId);
+    expect((await auth.credential()) === 'synthetic-fixture').toBe(true);
   });
 });

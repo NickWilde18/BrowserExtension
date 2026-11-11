@@ -71,25 +71,34 @@ describe('安装密钥', () => {
     expect(chatVerifies(after.install_key, after.install_id, 'code-2', after.install_proof)).toBe(true);
   });
 
-  it('旧版本存的随机 UUID 被由密钥算出的 id 替换', async () => {
+  // 587-KEYLOSS=A：启动时不因密钥丢了/对不上就换 id，照旧用缓存的 install_id；只在换凭据时才重新生成。
+  it('启动时照旧用缓存的 install_id：旧版本的随机 UUID、密钥被清掉都不换 id、不生成密钥', async () => {
     const local = new MemoryKV();
     await local.set('identity.installId', '66666666-7777-4888-9999-aaaaaaaaaaaa');
-    const id = await new Identity(local, new MemoryKeyStore()).installId();
-    expect(id).not.toBe('66666666-7777-4888-9999-aaaaaaaaaaaa');
-    expect(await local.get('identity.installId')).toBe(id);
+    const keys = new MemoryKeyStore();
+    expect(await new Identity(local, keys).installId()).toBe('66666666-7777-4888-9999-aaaaaaaaaaaa');
+    expect(keys.pair).toBeUndefined();
+
+    const fresh = new MemoryKV();
+    const first = await new Identity(fresh, keys).installId();
+    keys.pair = undefined;
+    expect(await new Identity(fresh, keys).installId()).toBe(first);
+    expect(keys.pair).toBeUndefined();
   });
 
-  it('密钥丢了或坏了：重新生成（等于重装一次），id 随之变化', async () => {
+  it('换凭据时私钥不可用（丢了或坏了）：重新生成密钥，证明用新的 install_id，缓存要等换凭据成功才改', async () => {
     const local = new MemoryKV();
     const keys = new MemoryKeyStore();
     const first = await new Identity(local, keys).installId();
-    keys.pair = undefined;
-    const lost = await new Identity(local, keys).installId();
-    expect(lost).not.toBe(first);
-    keys.pair = { privateKey: 'junk', publicKey: 'junk' } as unknown as CryptoKeyPair;
-    const broken = await new Identity(local, keys).installId();
-    expect(broken).not.toBe(lost);
-    expect(keys.pair!.privateKey).toBeInstanceOf(CryptoKey);
+    for (const lost of [undefined, { privateKey: 'junk', publicKey: 'junk' } as unknown as CryptoKeyPair]) {
+      keys.pair = lost;
+      const identity = new Identity(local, keys);
+      const proof = await identity.prove('code');
+      expect(proof.install_id).not.toBe(first);
+      expect(keys.pair!.privateKey).toBeInstanceOf(CryptoKey);
+      expect(chatVerifies(proof.install_key, proof.install_id, 'code', proof.install_proof)).toBe(true);
+      expect(await identity.installId()).toBe(first);
+    }
   });
 
   it('并发取 id 只生成一把密钥；存储失败不缓存，下次重试', async () => {

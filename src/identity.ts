@@ -4,10 +4,12 @@
 // 存进插件的 IndexedDB；安装 id 由公钥算出（UUIDv8，见 deriveInstallId），换凭据时用私钥签名证明持有这份安装，
 // 别人知道 install_id 也拿不出能算出它的公钥对应的私钥。卸载重装会变。每装一份插件 = 一个浏览器
 // （同一台电脑的 Chrome 和 Edge、多个用户资料、多台电脑各算一个）。
-// storage.local 的 identity.installId 只是缓存，以密钥为准：密钥丢了或和缓存对不上，就重新生成（等于重装一次）。
+// 当前使用的 install_id 存在 storage.local 的 identity.installId。启动时不拿密钥核对（587-KEYLOSS=A）：密钥丢了
+// 或和缓存对不上，照旧用缓存的 id 和凭据；只在换凭据时发现私钥不可用，才重新生成密钥和 id（等于重装一次）。
 // 显示名：默认按浏览器与系统生成（如「Chrome · Linux」），用户可在弹窗里改；用于在对话里选用哪台。
 
 import { PROTOCOL_VERSION } from './config';
+import { isUUID } from './protocol/frames';
 import type { ActionName, HelloFrame } from './protocol/frames';
 import type { KV } from './storage';
 
@@ -145,9 +147,30 @@ export class Identity {
 
   constructor(private readonly local: KV, private readonly keys: KeyStore = indexedDBKeyStore()) {}
 
-  /** 安装 id：由安装公钥算出，规范形态（小写带连字符）。 */
+  /**
+   * 当前使用的安装 id（hello、凭据比对、退出、各通道都用它）：storage.local 里缓存的规范 UUID。
+   * 启动时不拿密钥核对（587-KEYLOSS=A）：密钥丢了或和缓存对不上，照旧用缓存的 id 和凭据，到下一次换凭据才换。
+   * 没有缓存（首次运行）或缓存不是规范形态时，取安装密钥（没有就生成）算出 id 并缓存。
+   */
   async installId(): Promise<string> {
+    const cached = await this.local.get<unknown>(INSTALL_ID_KEY);
+    if (isUUID(cached)) return cached;
+    const id = (await this.key()).installId;
+    await this.local.set(INSTALL_ID_KEY, id);
+    return id;
+  }
+
+  /**
+   * 换凭据要用的安装 id：由当前可用的安装密钥算出；私钥不可用（丢了、坏了）就重新生成密钥，等于重装一次。
+   * 可能和 installId() 的缓存不同（例如旧版本的随机 UUID、密钥被清掉）；换凭据成功后由 adopt() 改写缓存。
+   */
+  async exchangeId(): Promise<string> {
     return (await this.key()).installId;
+  }
+
+  /** 换凭据成功：从此以这个 id 为准（hello、凭据比对都换成它）。 */
+  async adopt(installId: string): Promise<void> {
+    await this.local.set(INSTALL_ID_KEY, installId);
   }
 
   /**
@@ -174,16 +197,13 @@ export class Identity {
   private async load(): Promise<InstallKey> {
     let found = await usable(await this.keys.get());
     if (!found) {
-      // 首次运行，或密钥丢了/坏了：重新生成，等于重装一次（Chat 按新的一台浏览器认）。
+      // 首次运行，或换凭据时发现密钥丢了/坏了：重新生成，等于重装一次（Chat 按新的一台浏览器认）。
       const generated = await crypto.subtle.generateKey(ECDSA_P256, false, ['sign']);
       await this.keys.put(generated);
       found = await usable(generated);
       if (!found) throw new Error('generated install key is unusable');
     }
-    const installId = await deriveInstallId(found.raw);
-    // storage.local 的缓存以密钥为准；旧版本存的随机 UUID 在这里被换掉，按它签的本地凭据随之失效。
-    if (await this.local.get<unknown>(INSTALL_ID_KEY) !== installId) await this.local.set(INSTALL_ID_KEY, installId);
-    return { pair: found.pair, installKey: base64url(found.raw), installId };
+    return { pair: found.pair, installKey: base64url(found.raw), installId: await deriveInstallId(found.raw) };
   }
 
   async displayName(): Promise<string> {

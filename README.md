@@ -16,7 +16,7 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 | `uploads` | 凭请求里的令牌取上传文件的原始字节；读到的字节数与 `Content-Length` 不符就当没取到，不放进页面 |
 | `files` | 下载、存 PDF 的内容 multipart 送回，拿 `file_id` |
 
-`install_id` 由安装公钥算出：首次运行用 WebCrypto 生成 ECDSA P-256 密钥对（私钥不可导出），CryptoKeyPair 存进插件的 IndexedDB；`install_id` = SHA-256(raw 公钥) 前 16 字节，置 UUIDv8 版本位与 RFC 9562 变体位，排成小写带连字符的规范形态。`storage.local` 的 `identity.installId` 只是缓存，以密钥为准；密钥丢了就重新生成（等于重装，Chat 按新设备认）。从随机 UUID 的旧版本升级后 `install_id` 会变，需要重新授权一次。
+`install_id` 由安装公钥算出：首次运行用 WebCrypto 生成 ECDSA P-256 密钥对（私钥不可导出），CryptoKeyPair 存进插件的 IndexedDB；`install_id` = SHA-256(raw 公钥) 前 16 字节，置 UUIDv8 版本位与 RFC 9562 变体位，排成小写带连字符的规范形态。当前使用的 `install_id` 存在 `storage.local` 的 `identity.installId`，启动时不拿密钥核对：密钥丢了或和缓存对不上，照旧用缓存的 id 和凭据。只在换凭据时发现私钥不可用，才重新生成密钥和 id（等于重装，Chat 按新设备认），换凭据成功后改用新 id。从随机 UUID 的旧版本升级后，照旧用原来的 id 和凭据；下一次换凭据（退出后重新登录、凭据被撤销或失效）时才换成由公钥算出的 id。
 
 ### 独立登录与退出
 

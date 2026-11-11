@@ -106,7 +106,8 @@ export class BrowserAuthentication {
     const verifier = randomValue();
     const state = randomValue();
     const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
-    const installId = await this.options.identity.installId();
+    // 换凭据用由安装密钥算出的 id（私钥不可用时在这里重新生成）；授权页与换凭据必须是同一个 id。
+    const installId = await this.options.identity.exchangeId();
     const displayName = await this.options.identity.displayName();
     if (!active()) return { ok: false };
     const identity = chrome.identity;
@@ -149,6 +150,8 @@ export class BrowserAuthentication {
       const body: unknown = await response.json();
       if (!active() || !body || typeof body !== 'object' || !('credential' in body) || typeof body.credential !== 'string'
         || !body.credential || !('account' in body) || typeof body.account !== 'string' || !body.account) return { ok: false };
+      // 换凭据成功才改用新 id：hello 与凭据比对从此用它（之前一直沿用缓存的旧 id 和旧凭据）。
+      await this.options.identity.adopt(installId);
       await this.options.local.set(CREDENTIAL_KEY, { origin: this.options.origin, installId, credential: body.credential, account: body.account });
       if (!active()) return { ok: false };
       this.options.onAuthenticated();
