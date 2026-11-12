@@ -1,0 +1,170 @@
+$ pnpm run build:test && playwright test
+$ node scripts/build.mjs --test-hooks --fake-transport --platform-origin http://127.0.0.1:18960 --out dist-test && node scripts/build.mjs --test-hooks --platform-origin http://127.0.0.1:18963 --out dist-test-fetch && node scripts/build.mjs --test-hooks --fake-transport --execution-backend dom --platform-origin http://127.0.0.1:18960 --out dist-test-dom
+built dist-test platform=http://127.0.0.1:18960 testHooks=true fakeTransport=true injected=1.62.1
+built dist-test-fetch platform=http://127.0.0.1:18963 testHooks=true fakeTransport=false injected=1.62.1
+built dist-test-dom platform=http://127.0.0.1:18960 testHooks=true fakeTransport=true injected=1.62.1
+
+Running 116 tests using 1 worker
+
+  ✓    1 test/e2e/actions.spec.ts:24:1 › navigate：后退、前进、刷新 (861ms)
+  ✓    2 test/e2e/actions.spec.ts:42:1 › tabs：list、new、select、close；close 关掉 AI 开的标签 (692ms)
+  ✓    3 test/e2e/actions.spec.ts:67:1 › close keep_tabs：只断开附着、标签留下 (474ms)
+  ✓    4 test/e2e/actions.spec.ts:74:1 › 不同对话各开各的标签组 (627ms)
+  ✓    5 test/e2e/actions.spec.ts:85:1 › find：按文字与正则找元素 (586ms)
+  ✓    6 test/e2e/actions.spec.ts:102:1 › click / hover / type / select / fill_form (5.4s)
+  ✓    7 test/e2e/actions.spec.ts:150:1 › stale ref 回 element_not_found (633ms)
+  ✓    8 test/e2e/actions.spec.ts:159:1 › hover 触发悬停；坐标点击 (2.1s)
+  ✓    9 test/e2e/actions.spec.ts:173:1 › press_key：单键与组合键 (2.7s)
+  ✓   10 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (795ms)
+  ✓   11 test/e2e/actions.spec.ts:208:1 › drag：HTML5 拖放 (9.9s)
+  ✓   12 test/e2e/actions.spec.ts:220:1 › dialog：alert / confirm / prompt (3.2s)
+  ✓   13 test/e2e/actions.spec.ts:250:1 › wait：等文字出现、等文字消失、等几秒 (3.4s)
+  ✓   14 test/e2e/actions.spec.ts:264:1 › console 与 network：级别过滤、凭据头去掉、按编号看正文 (2.3s)
+  ✓   15 test/e2e/actions.spec.ts:299:1 › screenshot：视口、整页、元素；尺寸按 CSS 像素 (1.8s)
+  ✓   16 test/e2e/actions.spec.ts:314:1 › pdf：存成交付文件 (622ms)
+  ✓   17 test/e2e/actions.spec.ts:325:1 › iframe：同源与跨源子框架进快照，编号带前缀，能点 (2.6s)
+  ✓   18 test/e2e/actions.spec.ts:348:1 › 后台标签被浏览器丢弃（换了 id）后照常可用：重新加载、重新附着 (1.1s)
+  ✓   19 test/e2e/actions.spec.ts:372:1 › 网址范围：javascript:、data:、file:// 不开 (469ms)
+  ✓   20 test/e2e/approval-timeout.spec.ts:8:3 › 密码确认超时保留准确结果与已发生效果 (2.8s)
+  ✓   21 test/e2e/approval-timeout.spec.ts:8:3 › 自输完成超时保留准确结果与已发生效果 (2.9s)
+  ✓   22 test/e2e/approval-timeout.spec.ts:8:3 › 脚本确认超时保留准确结果与已发生效果 (2.9s)
+  ✓   23 test/e2e/approval-timeout.spec.ts:8:3 › 上传确认超时保留准确结果与已发生效果 (2.9s)
+  ✓   24 test/e2e/approval-timeout.spec.ts:8:3 › 跨站确认超时保留准确结果与已发生效果 (4.0s)
+  ✓   25 test/e2e/approval-timeout.spec.ts:8:3 › 下载确认超时保留准确结果与已发生效果 (3.9s)
+  ✓   26 test/e2e/approvals.spec.ts:29:1 › 确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝 (499ms)
+  ✓   27 test/e2e/approvals.spec.ts:50:3 › 确认窗：button 关闭只拒绝当前动作，不全局停止浏览器 (637ms)
+  ✓   28 test/e2e/approvals.spec.ts:50:3 › 确认窗：Escape 关闭只拒绝当前动作，不全局停止浏览器 (626ms)
+  ✓   29 test/e2e/approvals.spec.ts:70:1 › 确认窗：短内容收紧窗口，长脚本可滚动阅读且按钮始终可达 (830ms)
+  ✓   30 test/e2e/approvals.spec.ts:98:1 › 确认窗：浅深主题均有明确底色与可读文字，窄窗口不横向溢出 (461ms)
+  ✓   31 test/e2e/approvals.spec.ts:120:1 › 站点授权：仅本次对话；同一对话不再问，别的对话还要问 (749ms)
+  ✓   32 test/e2e/approvals.spec.ts:144:1 › 站点授权：总是允许，换对话也不问；弹窗里能撤销 (804ms)
+  ✓   33 test/e2e/approvals.spec.ts:164:1 › 站点授权：拒绝不开标签；超时回 approval_timeout (2.8s)
+  ✓   34 test/e2e/approvals.spec.ts:183:1 › 跨站跳转：点链接去没授权的站点先问，拒绝就不跳 (1.8s)
+  ✓   35 test/e2e/approvals.spec.ts:207:1 › 跨站跳转：同站链接重定向到别的站点也拦 (1.7s)
+  ✓   36 test/e2e/approvals.spec.ts:223:1 › 密码框：允许 / 我自己输入 / 拒绝 (1.7s)
+  ✓   37 test/e2e/approvals.spec.ts:267:1 › 上传：可见的文件框、藏在按钮后面的文件框；拒绝不放文件 (2.4s)
+  ✓   38 test/e2e/approvals.spec.ts:312:1 › 下载：允许后存成交付文件、不进下载目录；拒绝回 download_denied (2.2s)
+  ✓   39 test/e2e/approvals.spec.ts:343:1 › 下载：<a download>（页面里重新取）、跨源的文件地址与表单 POST 导出（响应阶段截下） (2.9s)
+  ✓   40 test/e2e/approvals.spec.ts:375:1 › 脚本：每次确认，显示全文；允许后在页面主世界执行，可带元素 (2.6s)
+  ✓   41 test/e2e/approvals.spec.ts:404:1 › Auto Mode：审查放行就不弹小窗 (504ms)
+  ✓   42 test/e2e/approvals.spec.ts:415:1 › Auto Mode：审查拦下时小窗显示理由，由用户定 (563ms)
+  ✓   43 test/e2e/approvals.spec.ts:425:1 › 审批只认 Chat：本机旧关闭设置不影响请求，ask_user 仍需插件确认 (590ms)
+  ✓   44 test/e2e/approvals.spec.ts:437:1 › Auto Mode：Chat 迟迟不回审批，15 秒后回到小窗 (15.6s)
+  ✓   45 test/e2e/approvals.spec.ts:448:1 › 叫停：弹窗「停止」后请求回 user_stopped，「恢复」后照常 (544ms)
+  ✓   46 test/e2e/authentication.spec.ts:28:1 › 不申请 cookies；平台 Cookie 新增/删除不改变独立登录 (1.6s)
+  ✓   47 test/e2e/authentication.spec.ts:41:1 › 用户拒绝不换凭据，重新点击可授权；并发点击只有一个授权流程 (584ms)
+  ✓   48 test/e2e/authentication.spec.ts:57:1 › 回调 state 不符不换凭据、不登录，仍可重新授权 (734ms)
+  ✓   49 test/e2e/authentication.spec.ts:80:1 › install_id 由安装公钥算出、私钥不可导出；重启浏览器后同一把密钥，再次换凭据签名仍被验过 (3.5s)
+  ✓   50 test/e2e/authentication.spec.ts:119:1 › 密钥被清掉后重启：凭据仍可用、install_id 不变；退出再登录时才生成新密钥、换新 install_id (3.5s)
+  ✓   51 test/e2e/control-bar.spec.ts:8:1 › 最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管 (2.1s)
+  ✓   52 test/e2e/control-bar.spec.ts:29:1 › 普通用户页不注入；伪造控制消息被拒，保留网页但撤销归属后控制条移除 (635ms)
+  ✓   53 test/e2e/control-bar.spec.ts:49:1 › 已授权给助手但未给注入权限的另一来源，不擅自安装控制条 (550ms)
+  ✓   54 test/e2e/control-bar.spec.ts:58:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (3.5s)
+  ✓   55 test/e2e/dom-backend.spec.ts:22:1 › 仅声明read；共享单文档后复用快照格式和ref，未声明动作明确拒绝 (628ms)
+  ✓   56 test/e2e/dom-backend.spec.ts:39:1 › frame页面或未授予来源权限时明确unsupported_page，不返回删减快照 (633ms)
+  ✓   57 test/e2e/newtab.spec.ts:37:3 › 新开标签（target=_blank 的链接）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (1.2s)
+  ✓   58 test/e2e/newtab.spec.ts:37:3 › 新开标签（点击触发 window.open）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (2.2s)
+  ✓   59 test/e2e/newtab.spec.ts:37:3 › 新开标签（target=_blank 的表单）去没授权的站点：先问，拒绝就一个请求都不发、不多开标签 (2.2s)
+  ✓   60 test/e2e/newtab.spec.ts:56:1 › 新开标签：允许后在本 AI 标签里打开，之后照常能操作 (2.0s)
+  ✓   61 test/e2e/newtab.spec.ts:80:1 › 动作之外：用户自己在 AI 标签里点新开标签的链接照常打开新标签，插件不附着它 (573ms)
+  ✓   62 test/e2e/newtab.spec.ts:93:1 › 动作结束之后 AI 标签里触发的下载：取消、不落进下载目录，下一个结果里告诉模型 (4.2s)
+  ✓   63 test/e2e/newtab.spec.ts:112:1 › 用户允许了下载但取不回内容（一次性链接）：结果仍是 ok，payload.download_failed=true，message 写原因 (1.1s)
+  ✓   64 test/e2e/newtab.spec.ts:126:1 › 用户自己在 AI 标签之外的下载照常 (609ms)
+  ✓   65 test/e2e/popup-layout.spec.ts:20:3 › 已连接 › 页头只写平台名和产品简称，不重复学校名与「浏览器扩展」大标题 (424ms)
+  ✓   66 test/e2e/popup-layout.spec.ts:30:3 › 已连接 › 四个标签各管一类内容，默认是当前页；数量显示在标签上 (525ms)
+  ✓   67 test/e2e/popup-layout.spec.ts:46:3 › 已连接 › 设置标签是入口列表，二级页用面包屑回到列表；退出登录在设置标签里 (836ms)
+  ✓   68 test/e2e/popup-layout.spec.ts:66:3 › 已连接 › 底部整宽按钮：停止操作网页 → 恢复操作网页，停止后当前页有横幅 (533ms)
+  ✓   69 test/e2e/popup-layout.spec.ts:78:3 › 已连接 › 中文界面用平台中文名，不出现 AI Service (900ms)
+  ✓   70 test/e2e/popup-layout.spec.ts:90:1 › 未登录：连接平台账号 + 打开平台，没有标签和停止按钮，底部一行链接可进二级页 (430ms)
+  ✓   71 test/e2e/popup-size.spec.ts:8:3 › 真实工具栏弹窗保持360px宽度：light (713ms)
+  ✓   72 test/e2e/popup-size.spec.ts:8:3 › 真实工具栏弹窗保持360px宽度：dark (773ms)
+  ✓   73 test/e2e/popup.spec.ts:27:1 › 没有对话时引导先打开平台，不能把页面共享给未知的下一段对话 (458ms)
+  ✓   74 test/e2e/popup.spec.ts:36:1 › 最近用过浏览器的对话有标题：将共享给：<标题>，标题当纯文本 (602ms)
+  ✓   75 test/e2e/popup.spec.ts:47:1 › 最近用过浏览器的对话标题为空：将共享给最近使用浏览器的对话 (484ms)
+  ✓   76 test/e2e/popup.spec.ts:52:1 › 同一站点长期授权和两段对话授权只提供一个移除入口，点击清除全部范围 (550ms)
+  ✓   77 test/e2e/popup.spec.ts:67:1 › 助手打开的页面可以取消访问，网页保留并移除控制条 (2.9s)
+  ✓   78 test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 (631ms)
+  ✓   79 test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 (3.6s)
+- generic [active] [ref=e1]:
+  - heading "Sign up" [level=1] [ref=e2]
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - text: Name
+      - textbox "Name" [ref=e5]
+    - generic [ref=e6]:
+      - text: Password
+      - textbox "Password" [ref=e7]
+    - generic [ref=e8]:
+      - text: Bio
+      - textbox "Bio" [ref=e9]
+    - generic [ref=e10]:
+      - text: Color
+      - combobox "Color" [ref=e11]:
+        - option "Red" [selected]
+        - option "Green"
+        - option "Blue"
+    - generic [ref=e12]:
+      - text: Fruits
+      - listbox "Fruits" [ref=e13]:
+        - option "Apple" [ref=e14]
+        - option "Pear" [ref=e15]
+        - option "Plum" [ref=e16]
+    - generic [ref=e17]:
+      - checkbox "I agree" [ref=e18]
+      - text: I agree
+    - generic [ref=e19]:
+      - radio "Small" [ref=e20]
+      - text: Small
+    - generic [ref=e21]:
+      - radio "Large" [ref=e22]
+      - text: Large
+    - generic [ref=e23]:
+      - text: Level
+      - slider "Level" [ref=e24]: "2"
+    - generic [ref=e25]:
+      - text: Day
+      - textbox "Day" [ref=e26]
+    - generic "Note" [ref=e27]: old note
+    - button "Submit" [ref=e28]
+  - paragraph
+  ✓   80 test/e2e/smoke.spec.ts:5:1 › open 之后 read 出带编号的快照 (514ms)
+  ✓   81 test/e2e/tab-fallback.spec.ts:31:3 › missing：open、read、tabs new、关闭与会话隔离仍可用 (767ms)
+  ✓   82 test/e2e/tab-fallback.spec.ts:31:3 › reject：open、read、tabs new、关闭与会话隔离仍可用 (758ms)
+  ✓   83 test/e2e/tab-fallback.spec.ts:31:3 › hang：open、read、tabs new、关闭与会话隔离仍可用 (2.7s)
+  ✓   84 test/e2e/tab-fallback.spec.ts:31:3 › title：open、read、tabs new、关闭与会话隔离仍可用 (1.8s)
+  ✓   85 test/e2e/tab-fallback.spec.ts:49:1 › 分组已成功但命名卡住时保留分组，拖出仍撤销控制 (1.5s)
+  ✓   86 test/e2e/tab-fallback.spec.ts:64:1 › 迟到的真实原生分组被按标签解散，不撤销回退页，不污染另一对话 (1.6s)
+  ✓   87 test/e2e/tab-fallback.spec.ts:77:1 › 动作超时早于分组预算时清理新页，迟到分组不再导航 (593ms)
+  ✓   88 test/e2e/tab-fallback.spec.ts:87:1 › 分组中取消请求关闭新页，随后请求可正常执行 (1.6s)
+  ✓   89 test/e2e/transport.spec.ts:86:1 › 平台网页 Cookie 不足以连接；插件独立授权后连上、收到 ready (472ms)
+  ✓   90 test/e2e/transport.spec.ts:106:1 › 执行一个动作，结果经 frames 交回 (109ms)
+  ✓   91 test/e2e/transport.spec.ts:112:1 › 上传：经 uploads 按令牌取文件内容 (780ms)
+  ✓   92 test/e2e/transport.spec.ts:124:1 › 上传：uploads 读到一半断了（字节数不到 Content-Length）：回 action_failed，不把截断的文件放进页面 (308ms)
+  ✓   93 test/e2e/transport.spec.ts:139:1 › 下载：内容经 files 送回 Chat，结果里是 Chat 给的 file_id (1.3s)
+  ✓   94 test/e2e/transport.spec.ts:153:1 › rotate（连接到 5 分钟寿命）：立刻重连，不退避 (58ms)
+  ✓   95 test/e2e/transport.spec.ts:163:1 › 断线：按退避重连 (936ms)
+  ✓   96 test/e2e/transport.spec.ts:171:1 › 401：清掉凭据并停止重连；重新独立授权后恢复 (3.3s)
+  ✓   97 test/e2e/transport.spec.ts:188:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗 (1.3s)
+  ✓   98 test/e2e/transport.spec.ts:213:1 › frames 回 413（结果超过 9 MiB，补充约定 3）：换成 action_failed 的错误结果再发一次 (55ms)
+  ✓   99 test/e2e/transport.spec.ts:219:1 › files 回 413：存 PDF 回 file_too_large；下载回 file_too_large，说明写明动作已经生效 (1.6s)
+  ✓  100 test/e2e/transport.spec.ts:235:1 › stream 回 403（插件没在平台登记）：停住不重连，弹窗提示；点「重新连接」再连 (3.8s)
+  ✓  101 test/e2e/transport.spec.ts:254:1 › 换了平台账号（ready.account 变了，补充约定 4）：清掉上一个账号的对话状态、断开附着，AI 标签不关 (240ms)
+  ✓  102 test/e2e/transport.spec.ts:289:1 › 四通道只 POST、不带 X-Service 和 Cookie，全部用独立凭据 (73ms)
+  ✓  103 test/e2e/transport.spec.ts:302:1 › closed revoked 立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据 (4.4s)
+  ✓  104 test/e2e/turn-release.spec.ts:43:1 › 回答结束释放本轮所有标签，保留网页与另一对话的附着 (764ms)
+  ✓  105 test/e2e/turn-release.spec.ts:61:1 › 迟到的旧回合释放不打断新回合，结束后旧请求不再执行 (562ms)
+  ✓  106 test/e2e/turn-release.spec.ts:78:1 › 停止回合取消等待中的确认，保留连接并允许下一轮 (638ms)
+  -  107 test/e2e/visual.spec.ts:26:3 › 控制条 · zh-CN · light
+  -  108 test/e2e/visual.spec.ts:91:3 › 弹窗与确认窗 · zh-CN · light
+  -  109 test/e2e/visual.spec.ts:26:3 › 控制条 · zh-CN · dark
+  -  110 test/e2e/visual.spec.ts:91:3 › 弹窗与确认窗 · zh-CN · dark
+  -  111 test/e2e/visual.spec.ts:26:3 › 控制条 · en-US · light
+  -  112 test/e2e/visual.spec.ts:91:3 › 弹窗与确认窗 · en-US · light
+  -  113 test/e2e/visual.spec.ts:26:3 › 控制条 · en-US · dark
+  -  114 test/e2e/visual.spec.ts:91:3 › 弹窗与确认窗 · en-US · dark
+  -  115 test/e2e/zz-capture-v2.spec.ts:38:1 › popup: signed out and signing in (real transport)
+  -  116 test/e2e/zz-capture-v2.spec.ts:63:1 › popup, confirm window and control bar (fake transport)
+
+  10 skipped
+  106 passed (3.0m)
+EXIT=0

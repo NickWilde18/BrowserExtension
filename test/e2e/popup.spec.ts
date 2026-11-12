@@ -1,7 +1,7 @@
 // 弹窗「共享此页」写明将共享给哪个对话（契约 3.2 的 conversation_title）。标题按纯文本显示，不当 HTML。
 import { expect, test } from '@playwright/test';
 
-import { A, CONV, CONV2, aiPage, allowSite, call, launch } from './helpers';
+import { A, CONV, CONV2, aiPage, allowSite, call, launch, openTab } from './helpers';
 import type { Harness } from './helpers';
 
 let h: Harness;
@@ -55,6 +55,7 @@ test('同一站点长期授权和两段对话授权只提供一个移除入口�
   await h.sw.evaluate((site) => (globalThis as any).__bxTest.sites.grant('any', site, 'always'), A);
   const popup = await h.ctx.newPage();
   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+  await openTab(popup, 'sites');
   await expect(popup.locator('#sites .site-group')).toHaveCount(1);
   await expect(popup.locator('#sites .grant-row')).toHaveCount(3);
   await expect(popup.locator('#sites button')).toHaveCount(1);

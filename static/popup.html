@@ -3,62 +3,142 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Browser extension</title>
+  <title>Browser Assistant</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <header class="brand"><img src="icons/emblem.png" alt=""><div><strong data-i18n="brandName"></strong><small data-i18n="brandUniversity"></small></div></header>
+  <svg width="0" height="0" class="sprite" aria-hidden="true">
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V3m0 0L8 7m4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M4.9 19.1 7 17m10-10 2.1-2.1"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6m4-6v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+  </svg>
   <img class="watermark" src="icons/emblem.png" alt="">
+  <header class="brand">
+    <img src="icons/emblem.png" alt="">
+    <div class="brand-name"><strong data-i18n="brandName"></strong><small data-i18n="brandProduct"></small></div>
+    <span id="statusPill" class="pill" role="status"></span>
+  </header>
+  <nav id="tabs" class="tabs" role="tablist" hidden>
+    <button id="tab-page" role="tab" type="button" data-tab="page" aria-controls="pagePanel"><span data-i18n="tabPage"></span></button>
+    <button id="tab-sites" role="tab" type="button" data-tab="sites" aria-controls="sitesPanel"><span data-i18n="tabSites"></span><em id="siteCount"></em></button>
+    <button id="tab-conv" role="tab" type="button" data-tab="conv" aria-controls="convPanel"><span data-i18n="tabConversations"></span><em id="controlledCount" hidden></em></button>
+    <button id="tab-settings" role="tab" type="button" data-tab="settings" aria-controls="settingsPanel"><span data-i18n="tabSettings"></span></button>
+  </nav>
   <main>
-    <div id="homeView">
-      <h1 data-i18n="popupTitle"></h1>
-      <div class="status-line"><i id="connectionMarker" class="dot"></i><div><span id="state"></span><span id="accountRow" hidden> · <span id="account"></span></span></div></div>
-      <p id="executionHint" class="notice neutral" hidden></p>
-      <button class="wide" id="openPlatform" type="button" data-i18n="openPlatform" hidden></button>
-      <button id="reconnect" class="wide" type="button" data-i18n="reconnect" hidden></button>
-      <button id="login" class="primary wide gap" type="button" data-i18n="login" hidden></button>
-      <button id="logout" class="link gap" type="button" data-i18n="logout" hidden></button>
-      <p id="authError" class="field-error" role="status" hidden></p>
-      <div id="connectedBody">
-        <section class="page-card">
-          <div class="small muted" data-i18n="currentPage"></div><div id="pageDomain" class="domain"></div>
-          <p id="pageExplanation"></p>
-          <button id="share" class="primary wide gap" type="button" data-i18n="share" hidden></button>
-          <p id="shareTarget" class="hint"></p>
-          <div id="sharedRow" hidden><p id="sharedOwner" class="small"></p><button id="unshare" class="wide gap" type="button" data-i18n="unshare"></button></div>
-          <p id="shareNote" class="hint" data-i18n="shareHint" hidden></p>
-          <button id="showControls" class="link gap" type="button" data-i18n="showControls" hidden></button>
-          <p id="controlsHint" class="hint" data-i18n="controlsHint" hidden></p>
-          <p id="controlsError" class="field-error" role="status" hidden></p>
-        </section>
-        <section id="controlledSection" class="section" hidden><h2 data-i18n="controlledConversations"></h2><ul id="controlledConversations"></ul><p class="hint" data-i18n="controlledHint"></p></section>
-        <section class="section"><h2 class="section-heading"><span data-i18n="sites"></span><small id="siteCount"></small></h2><p class="hint" data-i18n="sitesRemovalHint"></p><input id="siteFilter" type="search" class="gap" hidden><ul id="sites" tabindex="0"></ul><p id="sitesNone" class="hint" data-i18n="sitesNone"></p></section>
-        <section class="section"><h2 class="section-heading" data-i18n="thisBrowser"></h2><div id="nameSummary" class="device"><span id="browserName"></span><button id="rename" class="link" type="button" data-i18n="rename"></button></div><form id="nameForm" hidden><label class="tiny muted" for="displayName" data-i18n="displayName"></label><div class="row"><input id="displayName" type="text" maxlength="64"><button id="saveName" type="submit" data-i18n="save"></button></div><p id="nameError" class="field-error" hidden data-i18n="nameRequired"></p><p class="hint" data-i18n="displayNameHint"></p></form></section>
+    <!-- 未连接：登录、登录中、连接中与各种断线状态共用一页；底部一行小字链接。 -->
+    <section id="gateView" class="gate" hidden>
+      <div class="gate-body">
+        <img id="gateCrest" class="gate-crest" src="icons/emblem.png" alt="">
+        <i id="gateSpinner" class="spinner big" hidden></i>
+        <h1 id="gateTitle"></h1>
+        <p id="state" class="muted"></p>
+        <div class="stack">
+          <button id="login" class="primary wide" type="button" data-i18n="login" hidden></button>
+          <button id="reconnect" class="primary wide" type="button" data-i18n="reconnect" hidden></button>
+          <button id="gateOpenPlatform" class="wide" type="button" data-i18n="openPlatform"></button>
+        </div>
+        <p id="authError" class="field-error" role="status" hidden></p>
       </div>
-      <div class="section"><details id="privacy"><summary data-i18n="privacyTitle"></summary><p data-i18n="privacyAccess"></p><p data-i18n="privacyBody"></p><p data-i18n="privacyRetention"></p></details><button id="openSettings" class="link gap" type="button" data-i18n="advancedSettings"></button></div>
-    </div>
-    <div id="settingsView" hidden>
-      <h1 data-i18n="advancedSettings"></h1><p class="hint" data-i18n="settingsIntro"></p>
-      <details id="advanced" open>
-        <summary data-i18n="serverOriginLabel"></summary>
-        <label class="form-label" data-i18n="currentPlatform"></label><div id="currentOrigin" class="readonly"></div>
-        <label class="form-label" for="serverOrigin" data-i18n="newPlatform"></label><input id="serverOrigin" type="url" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="serverOriginHint serverSwitchHint serverPermissionHint serverError">
+      <div id="gateLinks" class="links">
+        <button class="text" type="button" data-open="privacy" data-i18n="privacyTitle"></button>
+        <button class="text" type="button" data-open="settings" data-i18n="advancedSettings"></button>
+        <button class="text" type="button" data-open="about" data-i18n="about"></button>
+      </div>
+    </section>
+
+    <section id="pagePanel" class="panel" role="tabpanel" aria-labelledby="tab-page" hidden>
+      <div id="stoppedBanner" class="banner" hidden>
+        <svg class="i"><use href="#i-stop"/></svg>
+        <div><strong data-i18n="stopped"></strong><p data-i18n="globalResumeHint"></p></div>
+      </div>
+      <p id="executionHint" class="notice neutral" hidden></p>
+      <div class="card page-card">
+        <div class="label" data-i18n="currentPage"></div>
+        <div class="host"><span id="pageInitial" class="favicon" aria-hidden="true"></span><span id="pageDomain"></span></div>
+        <p id="pageExplanation" class="muted"></p>
+        <button id="share" class="primary wide" type="button" hidden><svg class="i"><use href="#i-share"/></svg><span data-i18n="share"></span></button>
+        <p id="shareTarget" class="target"></p>
+        <div id="sharedRow" hidden><p id="sharedOwner" class="target strong"></p><button id="unshare" class="wide" type="button" data-i18n="unshare"></button></div>
+        <button id="openPlatform" class="wide" type="button" data-i18n="openPlatform" hidden></button>
+        <button id="showControls" class="text accent" type="button" data-i18n="showControls" hidden></button>
+        <p id="controlsHint" class="hint" data-i18n="controlsHint" hidden></p>
+        <p id="controlsError" class="field-error" role="status" hidden></p>
+      </div>
+      <p id="accountRow" class="account" hidden><span data-i18n="account"></span> <span id="account"></span></p>
+    </section>
+
+    <section id="sitesPanel" class="panel" role="tabpanel" aria-labelledby="tab-sites" hidden>
+      <label class="search" id="siteSearch" hidden><svg class="i"><use href="#i-search"/></svg><input id="siteFilter" type="search"></label>
+      <ul id="sites" class="card list" tabindex="0"></ul>
+      <p id="sitesNone" class="empty-note" data-i18n="sitesNone"></p>
+      <p class="hint" data-i18n="sitesRemovalHint"></p>
+    </section>
+
+    <section id="convPanel" class="panel" role="tabpanel" aria-labelledby="tab-conv" hidden>
+      <ul id="controlledConversations" class="card list"></ul>
+      <p id="controlledNone" class="empty-note" data-i18n="controlledNone"></p>
+      <p class="hint" data-i18n="controlledHint"></p>
+    </section>
+
+    <section id="settingsPanel" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <div class="card nav">
+        <button id="openBrowser" type="button" data-open="browser"><svg class="i lead"><use href="#i-laptop"/></svg><span data-i18n="thisBrowser"></span><em id="browserName"></em><svg class="i chev"><use href="#i-chev"/></svg></button>
+        <button id="openPrivacy" type="button" data-open="privacy"><svg class="i lead"><use href="#i-shield"/></svg><span data-i18n="privacyTitle"></span><svg class="i chev"><use href="#i-chev"/></svg></button>
+        <button id="openSettings" type="button" data-open="settings"><svg class="i lead"><use href="#i-gear"/></svg><span data-i18n="advancedSettings"></span><svg class="i chev"><use href="#i-chev"/></svg></button>
+        <button id="about" type="button" data-open="about"><svg class="i lead"><use href="#i-info"/></svg><span data-i18n="helpAbout"></span><svg class="i chev"><use href="#i-chev"/></svg></button>
+      </div>
+      <button id="logout" class="text danger-text" type="button" data-i18n="logout"></button>
+    </section>
+
+    <!-- 二级页：已连接时留在「设置」标签下，未连接时从底部链接进入；面包屑返回。 -->
+    <section id="browserView" class="panel sub" hidden>
+      <button class="crumb" type="button" data-back><svg class="i"><use href="#i-back"/></svg><span class="crumb-parent"></span><b>/</b><strong data-i18n="thisBrowser"></strong></button>
+      <div class="card form">
+        <div id="nameSummary" class="device"><div><div class="label" data-i18n="displayName"></div><strong id="browserNameFull"></strong></div><button id="rename" type="button" data-i18n="rename"></button></div>
+        <form id="nameForm" hidden><label class="label" for="displayName" data-i18n="displayName"></label><div class="row"><input id="displayName" type="text" maxlength="64"><button id="saveName" class="primary" type="submit" data-i18n="save"></button></div><p id="nameError" class="field-error" hidden data-i18n="nameRequired"></p></form>
+      </div>
+      <p class="hint" data-i18n="displayNameHint"></p>
+    </section>
+
+    <section id="privacyView" class="panel sub" hidden>
+      <button class="crumb" type="button" data-back><svg class="i"><use href="#i-back"/></svg><span class="crumb-parent"></span><b>/</b><strong data-i18n="privacyTitle"></strong></button>
+      <div id="privacy" class="card prose"><p data-i18n="privacyAccess"></p><p data-i18n="privacyBody"></p><p data-i18n="privacyRetention"></p></div>
+    </section>
+
+    <section id="settingsView" class="panel sub" hidden>
+      <button class="crumb" type="button" data-back><svg class="i"><use href="#i-back"/></svg><span class="crumb-parent"></span><b>/</b><strong data-i18n="advancedSettings"></strong></button>
+      <p class="intro" data-i18n="settingsIntro"></p>
+      <div id="advanced" class="card form">
+        <div class="label" data-i18n="currentPlatform"></div><div id="currentOrigin" class="readonly"></div>
+        <label class="label" for="serverOrigin" data-i18n="newPlatform"></label><input id="serverOrigin" type="url" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="serverOriginHint serverSwitchHint serverPermissionHint serverError">
         <p id="serverOriginHint" class="hint" data-i18n="serverOriginHint"></p>
-        <p id="serverPermissionHint" class="notice neutral gap" data-i18n="serverPermissionHint" hidden></p>
-        <div id="switchConfirmation" class="notice gap" hidden><p id="serverSwitchHint" data-i18n="serverSwitchHint"></p></div>
-        <button id="saveServer" class="primary wide gap" type="button" data-i18n="settingsNext" disabled></button>
-        <button id="cancelSwitch" class="wide gap" type="button" data-i18n="cancel" hidden></button>
-        <button id="restoreDefault" class="link gap" type="button" data-i18n="restoreDefault"></button>
-        <p id="serverError" class="hint gap" role="status" aria-live="polite" hidden></p>
-      </details>
-      <button class="link space" type="button" data-back data-i18n="backExtension"></button>
-    </div>
-    <div id="aboutView" hidden><h1 data-i18n="aboutTitle"></h1><section class="section"><h2 data-i18n="helpFeedback"></h2><p class="muted gap" data-i18n="helpOffice"></p><p class="hint" data-i18n="helpPending"></p></section><section class="section"><h2 data-i18n="jointDevelopment"></h2><p class="gap" data-i18n="developmentPending"></p></section><p class="hint space" data-i18n="copyright"></p><button class="link space" type="button" data-back data-i18n="backExtension"></button></div>
+        <p id="serverPermissionHint" class="notice neutral" data-i18n="serverPermissionHint" hidden></p>
+        <div id="switchConfirmation" class="notice" hidden><p id="serverSwitchHint" data-i18n="serverSwitchHint"></p></div>
+        <button id="saveServer" class="primary wide" type="button" data-i18n="settingsNext" disabled></button>
+        <button id="cancelSwitch" class="wide" type="button" data-i18n="cancel" hidden></button>
+        <p id="serverError" class="hint" role="status" aria-live="polite" hidden></p>
+      </div>
+      <button id="restoreDefault" class="text accent" type="button" data-i18n="restoreDefault"></button>
+    </section>
+
+    <section id="aboutView" class="panel sub" hidden>
+      <button class="crumb" type="button" data-back><svg class="i"><use href="#i-back"/></svg><span class="crumb-parent"></span><b>/</b><strong data-i18n="helpAbout"></strong></button>
+      <div class="card prose"><h2 data-i18n="helpFeedback"></h2><p data-i18n="helpOffice"></p><p class="hint" data-i18n="helpPending"></p></div>
+      <div class="card prose"><h2 data-i18n="jointDevelopment"></h2><p data-i18n="developmentPending"></p></div>
+      <p class="hint" data-i18n="copyright"></p>
+    </section>
   </main>
-  <footer>
-    <div id="stoppedRow" hidden><p class="stop-status" data-i18n="stopped"></p><p class="hint" data-i18n="globalResumeHint"></p><button id="resume" class="primary wide" type="button" data-i18n="resume"></button></div>
-    <div id="stopRow"><p class="hint" data-i18n="stopHint"></p><button id="stop" class="danger wide" type="button" data-i18n="stop"></button></div>
-    <div class="footer-contact"><span data-i18n="helpFeedback"></span><button id="about" class="link" type="button" data-i18n="about"></button></div>
+  <footer id="footer" hidden>
+    <button id="stop" class="danger wide" type="button"><svg class="i"><use href="#i-stop"/></svg><span data-i18n="stop"></span></button>
+    <button id="resume" class="primary wide" type="button" hidden><svg class="i"><use href="#i-play"/></svg><span data-i18n="resume"></span></button>
   </footer>
   <script type="module" src="popup.js"></script>
 </body>

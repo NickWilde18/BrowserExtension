@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { A, B, CONV2, aiPage, allowSite, call, clickPanelButton, launch, type Harness } from './helpers';
+import { A, B, CONV2, aiPage, allowSite, call, clickPanelButton, launch, openTab, type Harness } from './helpers';
 let h: Harness;
 
 test.beforeEach(async () => { h = await launch(); await allowSite(h, A); await allowSite(h, A, CONV2); });
@@ -19,6 +19,7 @@ test('最后一页关闭后，可信popup可恢复指定对话，全局恢复不
   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
   await expect(popup.locator('#controlledConversations li')).toHaveCount(1, { timeout: 2000 });
   await expect(popup.locator('#controlledConversations')).toContainText('待恢复的任务');
+  await openTab(popup, 'conv');
   await popup.locator('#controlledConversations button').click();
   expect((await call(h, 'open', { url: `${A}/form.html` })).outcome).toBe('ok');
   expect((await call(h, 'press_key', { key: 'Tab' })).code).toBe('action_failed');

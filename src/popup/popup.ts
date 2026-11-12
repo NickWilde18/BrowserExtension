@@ -1,5 +1,6 @@
-// 插件弹窗（设计状态集07）：连接、当前页面、站点授权归属、逐对话继续与全局停止、高级设置。
-// 所有来自页面/对话的标题和站点均按纯文本显示。页头和停止入口固定，中间独立滚动。
+// 插件弹窗（第二版，Tark#528 拍板 rev 531 的结构 A）：已连接时按「当前页 / 站点 / 对话 / 设置」分标签，
+// 设置是一列入口，点进带面包屑返回的二级页；未连接时是一页登录 / 状态说明，底部一行小字链接进同样的二级页。
+// 所有来自页面/对话的标题和站点均按纯文本显示。页头、标签和底部「停止 / 恢复操作网页」固定，中间独立滚动。
 import type { PageMessage, PopupState } from '../messages';
 import { PLATFORM_ORIGIN } from '../config';
 
@@ -12,7 +13,11 @@ function $(id: string): HTMLElement {
 }
 const button = (id: string) => $(id) as HTMLButtonElement;
 let latest: PopupState | null = null;
-let view = 'home';
+type Tab = 'page' | 'sites' | 'conv' | 'settings';
+type Sub = 'browser' | 'privacy' | 'settings' | 'about';
+let tab: Tab = 'page';
+/** 当前打开的二级页；null 表示在标签页（已连接）或登录页（未连接）。 */
+let sub: Sub | null = null;
 let editingName = false;
 let busy = false;
 let serverStage: 'draft' | 'permission' | 'confirm' = 'draft';
@@ -22,11 +27,47 @@ let permissionEpoch = '';
 let controlledSignature = '';
 let siteSignature = '';
 
-function show(next: string): void {
-  view = next;
-  for (const name of ['home', 'settings', 'about']) $(`${name}View`).hidden = name !== next;
+const SUBS: Sub[] = ['browser', 'privacy', 'settings', 'about'];
+const TABS: Tab[] = ['page', 'sites', 'conv', 'settings'];
+
+/** 按连接状态、当前标签和二级页决定显示哪一块；只改可见性，不发消息。 */
+function layout(): void {
+  const connected = latest?.connection === 'connected';
+  $('tabs').hidden = !connected;
+  $('footer').hidden = !connected;
+  $('gateView').hidden = connected || sub !== null;
+  for (const name of TABS) {
+    const selected = connected && name === tab;
+    const el = $(`tab-${name}`);
+    el.setAttribute('aria-selected', String(selected));
+    el.tabIndex = selected ? 0 : -1;
+    $(`${name}Panel`).hidden = !selected || sub !== null;
+  }
+  // 已连接时二级页都挂在「设置」标签下，标签高亮留在「设置」；未连接时从登录页的小字链接进来。
+  if (connected && sub !== null) {
+    for (const name of TABS) $(`tab-${name}`).setAttribute('aria-selected', String(name === 'settings'));
+  }
+  for (const name of SUBS) $(`${name}View`).hidden = name !== sub;
+  for (const el of document.querySelectorAll<HTMLElement>('.crumb-parent')) el.textContent = t(connected ? 'tabSettings' : 'back');
+}
+function selectTab(next: Tab): void {
+  tab = next;
+  sub = null;
+  document.querySelector('main')!.scrollTop = 0;
+  layout();
+}
+function openSub(next: Sub): void {
+  sub = next;
+  if (latest?.connection === 'connected') tab = 'settings';
   document.querySelector('main')!.scrollTop = 0;
   if (next === 'settings' && latest) $('currentOrigin').textContent = latest.serverOrigin;
+  layout();
+}
+function closeSub(): void {
+  sub = null;
+  if (editingName) cancelName();
+  document.querySelector('main')!.scrollTop = 0;
+  layout();
 }
 function openPlatform(): void {
   if (latest) void chrome.tabs.create({ url: latest.serverOrigin });
@@ -121,10 +162,16 @@ function renderControlled(st: PopupState): void {
   const signature = JSON.stringify([st.serverEpoch, st.controlledConversations, st.serverSwitching, st.stopped]);
   if (signature === controlledSignature) return;
   controlledSignature = signature;
-  $('controlledSection').hidden = st.controlledConversations.length === 0;
+  const count = st.controlledConversations.length;
+  $('controlledCount').hidden = count === 0;
+  $('controlledCount').textContent = String(count);
+  $('controlledNone').hidden = count !== 0;
+  $('controlledConversations').hidden = count === 0;
   $('controlledConversations').replaceChildren(...st.controlledConversations.map((entry) => {
     const item = document.createElement('li');
+    item.className = 'row';
     const title = document.createElement('span');
+    title.className = 'title';
     title.textContent = entry.title || t('controlUntitled');
     title.title = title.textContent;
     item.append(title);
@@ -165,7 +212,8 @@ function renderSites(st: PopupState): void {
   siteSignature = signature;
   $('siteCount').textContent = String(groups.length);
   $('sitesNone').hidden = groups.length !== 0;
-  $('siteFilter').hidden = groups.length <= 5;
+  $('siteSearch').hidden = groups.length <= 5;
+  $('sites').hidden = groups.length === 0;
   $('sites').setAttribute('aria-label', t('sites'));
   $('sites').replaceChildren(...groups.map((group) => {
     const li = document.createElement('li');
@@ -179,8 +227,9 @@ function renderSites(st: PopupState): void {
     try { name.textContent = new URL(group.site).host; } catch { name.textContent = group.site; }
     const remove = document.createElement('button');
     remove.type = 'button';
-    remove.className = 'link';
-    remove.textContent = t('revoke');
+    remove.className = 'icon';
+    remove.title = t('revoke');
+    remove.innerHTML = '<svg class="i"><use href="#i-trash"/></svg>';
     remove.setAttribute('aria-label', `${t('revoke')} ${name.textContent}`);
     remove.addEventListener('click', async () => {
       remove.disabled = true;
@@ -214,30 +263,44 @@ async function render(): Promise<void> {
   const readOnly = st.supportedActions.length === 1 && st.supportedActions[0] === 'read';
   const stateKey = st.connection === 'error' && st.lastError === 'forbidden'
     ? 'stateForbidden' : `state${st.connection.charAt(0).toUpperCase()}${st.connection.slice(1)}`;
-  $('state').textContent = t(st.signingIn ? 'signingIn' : stateKey);
+  // 页头胶囊只放短状态；完整说明在登录页正文（#state）。
+  const pill = available ? (st.stopped ? ['pillStopped', 'danger'] : ['pillConnected', 'ok'])
+    : st.signingIn ? ['pillWaiting', 'warn']
+      : st.connection === 'waiting_login' ? ['pillSignedOut', 'none']
+        : st.connection === 'connecting' ? ['pillConnecting', 'warn'] : ['pillOffline', 'danger'];
+  $('statusPill').textContent = t(pill[0]!);
+  $('statusPill').className = `pill ${pill[1]}`;
+  const login = st.connection === 'waiting_login';
+  $('gateTitle').textContent = t(st.signingIn ? 'signingInTitle' : login ? 'loginTitle' : st.connection === 'connecting' ? 'stateConnecting' : 'pillOffline');
+  $('state').textContent = st.connection === 'connecting' ? '' : t(st.signingIn ? 'signingIn' : stateKey);
+  const busyGate = st.signingIn || st.connection === 'connecting';
+  $('gateSpinner').hidden = !busyGate;
+  $('gateCrest').hidden = busyGate;
   $('accountRow').hidden = !available || !st.account;
   $('account').textContent = available ? st.account ?? '' : '';
-  $('connectionMarker').className = st.connection === 'connecting' ? 'spinner' : `dot${available ? '' : ' warn'}`;
-  $('connectedBody').hidden = !available;
-  $('openPlatform').hidden = available && st.shareTarget.kind !== 'next';
+  $('openPlatform').hidden = !available || st.shareTarget.kind !== 'next';
   $('reconnect').hidden = !['replaced', 'error', 'offline'].includes(st.connection);
-  $('login').hidden = st.connection !== 'waiting_login';
+  $('login').hidden = !login;
   // 登录中仍可点：授权页被导航走或关不掉时，用户能中止这次并重新开始，不必等超时。
   button('login').disabled = st.serverSwitching || !st.serverPermissionGranted;
   button('login').textContent = t(st.signingIn ? 'restartLogin' : 'login');
-  $('logout').hidden = st.connection === 'waiting_login';
+  button('login').className = st.signingIn ? 'wide' : 'primary wide';
+  $('logout').hidden = login;
   button('logout').disabled = st.serverSwitching;
   $('executionHint').hidden = !readOnly && st.supportedActions.length > 0;
   $('executionHint').textContent = t(readOnly ? 'readOnlyHint' : 'noActionsHint');
-  $('stoppedRow').hidden = !st.stopped;
-  $('stopRow').hidden = st.stopped;
+  $('stoppedBanner').hidden = !st.stopped;
+  $('resume').hidden = !st.stopped;
+  $('stop').hidden = st.stopped;
   button('stop').disabled = !available || st.serverSwitching;
   button('resume').disabled = !available || st.serverSwitching;
   renderControlled(st);
   renderSites(st);
   $('browserName').textContent = st.displayName;
+  $('browserNameFull').textContent = st.displayName;
   if (!editingName) ($('displayName') as HTMLInputElement).value = st.displayName;
   $('pageDomain').textContent = st.pageSite ? new URL(st.pageSite).host : t('unsupportedPage');
+  $('pageInitial').textContent = st.pageSite ? new URL(st.pageSite).hostname.charAt(0).toUpperCase() : '·';
   $('pageExplanation').textContent = t(st.pageSite === null ? 'unsupportedPageHint' : st.pageOwner ? (st.pageOwner.assistantOpened ? 'assistantPageHint' : 'sharedPageHint') : st.shareTarget.kind === 'next' ? 'noConversationHint' : 'shareHint');
   $('share').hidden = st.pageOwner !== null || st.shareTarget.kind === 'next';
   button('share').disabled = !st.canShare || st.stopped || !available;
@@ -251,6 +314,7 @@ async function render(): Promise<void> {
   button('showControls').disabled = st.serverSwitching;
   $('controlsHint').hidden = st.controlTabId === null;
   updateServerSettings();
+  layout();
 }
 
 for (const el of document.querySelectorAll<HTMLElement>('[data-i18n]')) el.textContent = t(el.dataset.i18n ?? '');
@@ -258,6 +322,16 @@ document.documentElement.lang = chrome.i18n.getUILanguage();
 $('siteFilter').setAttribute('aria-label', t('sitesFilter'));
 ($('siteFilter') as HTMLInputElement).placeholder = t('sitesFilter');
 $('openPlatform').addEventListener('click', openPlatform);
+$('gateOpenPlatform').addEventListener('click', openPlatform);
+for (const el of document.querySelectorAll<HTMLElement>('[data-tab]')) el.addEventListener('click', () => selectTab(el.dataset.tab as Tab));
+// 标签条的方向键切换（WAI-ARIA tabs）。
+$('tabs').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const next = TABS[(TABS.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]!;
+  selectTab(next);
+  $(`tab-${next}`).focus();
+});
+for (const el of document.querySelectorAll<HTMLElement>('[data-open]')) el.addEventListener('click', () => openSub(el.dataset.open as Sub));
 for (const [id, type, error] of [['login', 'popup:login', 'loginFailed'], ['logout', 'popup:logout', 'logoutFailed']] as const) {
   $(id).addEventListener('click', async () => {
     button(id).disabled = true;
@@ -269,9 +343,7 @@ for (const [id, type, error] of [['login', 'popup:login', 'loginFailed'], ['logo
     finally { await render(); }
   });
 }
-$('openSettings').addEventListener('click', () => show('settings'));
-$('about').addEventListener('click', () => show('about'));
-for (const el of document.querySelectorAll('[data-back]')) el.addEventListener('click', () => show('home'));
+for (const el of document.querySelectorAll('[data-back]')) el.addEventListener('click', closeSub);
 $('siteFilter').addEventListener('input', filterSites);
 $('serverOrigin').addEventListener('input', () => { serverDraftDirty = true; resetServerStage(); });
 $('saveServer').addEventListener('click', () => { void advanceServer(); });

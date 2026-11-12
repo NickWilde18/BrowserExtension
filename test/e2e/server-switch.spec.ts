@@ -3,7 +3,7 @@ import { chromium, expect, test, type BrowserContext, type Page, type Worker } f
 import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { A, CONV, signIn } from './helpers';
+import { A, CONV, signIn, openTab } from './helpers';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FIRST = 'http://127.0.0.1:18963';
@@ -50,6 +50,7 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   await send(FIRST, pending, 'evaluate', { function: '() => document.title' });
   await expect.poll(() => ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(1);
 
+  await openTab(popup, 'settings');
   await popup.locator('#openSettings').click();
   await popup.locator('#serverOrigin').fill(SECOND);
   await popup.locator('#saveServer').click();
@@ -62,7 +63,7 @@ test('高级设置通过真实权限API切服，旧确认/授权/去重不进入
   await expect.poll(async () => ({ origin: (await state()).serverOrigin, connection: (await state()).connection })).toEqual({ origin: SECOND, connection: 'waiting_login' });
   await expect(popup.locator('#serverError')).toContainText('saved');
   expect((await ctl(SECOND, 'state')).hellos).toHaveLength(0);
-  await popup.locator('[data-back]').first().click();
+  await popup.locator('#settingsView [data-back]').click();
   await signIn(ctx, popup);
   await expect.poll(() => ctx.pages().filter((p) => p.url().includes('approval.html')).length).toBe(0);
   expect((await state()).sites).toEqual({ always: [], conversation: [] });

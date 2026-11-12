@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { CHAT_PORT } from './global-setup';
 import { ACTIONS } from '../../src/protocol/frames';
-import { A, CONV, answer, refOf, signIn } from './helpers';
+import { A, CONV, answer, refOf, signIn, openTab } from './helpers';
 import type { Harness } from './helpers';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -316,6 +316,7 @@ test('closed revoked 立即清凭据、授权和标签归属，停止重连；�
   await popup.goto(`chrome-extension://${EXT_ID}/popup.html`);
   await signIn(ctx, popup);
   const logouts = (await ctl('state')).logouts;
+  await openTab(popup, 'settings');
   await popup.locator('#logout').click();
   await expect.poll(async () => (await status()).state).toBe('waiting_login');
   await expect.poll(async () => (await ctl('state')).logouts).toBe(logouts + 1);

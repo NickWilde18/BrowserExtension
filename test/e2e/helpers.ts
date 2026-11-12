@@ -215,14 +215,23 @@ export async function clickPanelButton(page: Page, panel: Locator): Promise<void
   const before = await panel.getAttribute('data-phase');
   const box = await panel.boundingBox();
   expect(box).not.toBeNull();
+  // 第二版主按钮在说明文字右侧（说明隐藏时靠右），所以横向也取中间和偏右两处。
   for (let offset = 12; offset < box!.height / 2; offset += 8) {
-    await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height - offset);
-    for (let i = 0; i < 10; i++) {
-      if (await panel.getAttribute('data-phase') !== before) return;
-      await page.waitForTimeout(50);
+    for (const x of [0.82, 0.5]) {
+      await page.mouse.click(box!.x + box!.width * x, box!.y + box!.height - offset);
+      for (let i = 0; i < 10; i++) {
+        if (await panel.getAttribute('data-phase') !== before) return;
+        await page.waitForTimeout(50);
+      }
     }
   }
   throw new Error('没有点到控制条的主按钮');
+}
+
+/** 弹窗已连接时按标签分页（当前页 / 站点 / 对话 / 设置）：先点开对应标签，再操作其中的控件。 */
+export async function openTab(popup: Page, tab: 'page' | 'sites' | 'conv' | 'settings'): Promise<void> {
+  await popup.locator(`#tab-${tab}`).click();
+  await expect(popup.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
 }
 
 /** AI 当前标签对应的 Playwright 页面。 */

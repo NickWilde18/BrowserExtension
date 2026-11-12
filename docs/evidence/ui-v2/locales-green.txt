@@ -1,0 +1,9 @@
+
+ RUN  v4.1.12 ~/.cache/foreman/ui-v2/BrowserExtension
+
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  12:54:17
+   Duration  190ms (transform 36ms, setup 0ms, import 51ms, tests 14ms, environment 0ms)
+
