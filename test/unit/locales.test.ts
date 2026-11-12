@@ -52,4 +52,20 @@ describe('界面文案', () => {
     const missing = [...referencedKeys()].filter((key) => !(key in zh));
     expect(missing).toEqual([]);
   });
+
+  it('中文文案用平台中文名「大学 AI 服务平台」，不出现英文平台名 AI Service（Tark#528 第二版）', () => {
+    const hits = Object.entries(zh).filter(([, v]) => v.message.includes('AI Service')).map(([k]) => k);
+    expect(hits).toEqual([]);
+    expect(zh.extName!.message).toBe('大学 AI 服务平台浏览器助手');
+    expect(zh.brandName!.message).toBe('大学 AI 服务平台');
+    expect(zh.controlBrand!.message).toBe('大学 AI 服务平台');
+  });
+
+  it('按钮名按拍板改：连接平台账号、停止 / 恢复操作网页、手动接管', () => {
+    expect([zh.login!.message, en.login!.message]).toEqual(['连接平台账号', 'Connect account']);
+    expect([zh.stop!.message, en.stop!.message]).toEqual(['停止操作网页', 'Stop web actions']);
+    expect([zh.resume!.message, en.resume!.message]).toEqual(['恢复操作网页', 'Resume web actions']);
+    expect([zh.controlTakeOver!.message, en.controlTakeOver!.message]).toEqual(['手动接管', 'Take over']);
+    expect([zh.brandName!.message, en.brandName!.message]).toEqual(['大学 AI 服务平台', 'AI Service']);
+  });
 });

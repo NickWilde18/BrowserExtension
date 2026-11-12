@@ -3,23 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Services Platform</title>
+  <title>AI Service</title>
   <link rel="icon" type="image/png" href="icons/browser-assistant-32.png">
   <link rel="stylesheet" href="approval.css">
 </head>
 <body>
   <main aria-labelledby="title">
-    <div class="window-title">
-      <span data-i18n="approvalWindowTitle"></span>
-      <button id="close" type="button">×</button>
-    </div>
+    <!-- 页头：校徽 + 「需要你的确认」+ 产品简称；平台名在窗口标题里（page.ts）。关闭 = 拒绝这次请求。 -->
     <header class="brand">
       <img src="icons/emblem.png" alt="">
-      <div>
-        <strong data-i18n="brandName"></strong>
-        <small data-i18n="brandUniversity"></small>
+      <div class="brand-name">
+        <strong data-i18n="approvalHeading"></strong>
+        <small data-i18n="brandProduct"></small>
       </div>
+      <button id="close" class="icon" type="button"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </header>
+    <img class="watermark" src="icons/emblem.png" alt="">
     <div id="content" class="content">
       <div id="conversationRow" class="conversation" hidden>
         <span data-i18n="approvalConversation"></span>
@@ -37,15 +36,18 @@
         <span id="reviewReason" dir="auto"></span>
       </section>
       <div id="clock" hidden>
-        <div class="countdown"><span aria-hidden="true">◷</span><span id="countdown" role="timer" aria-live="off"></span></div>
+        <div class="countdown"><span id="countdown" role="timer" aria-live="off"></span></div>
         <div class="countdown-track"><span id="track"></span></div>
       </div>
       <div id="pending" class="status-line" role="status" hidden>
         <i class="spinner"></i><span data-i18n="approvalSubmitting"></span>
       </div>
+    </div>
+    <!-- 操作按钮固定在窗口底部：长脚本在上面的内容区里滚动，按钮始终看得到。 -->
+    <footer class="decide">
       <div id="buttons" class="actions"></div>
       <p id="kbdNote" class="kbd-note" data-i18n="approvalKeyboardNote" hidden></p>
-    </div>
+    </footer>
   </main>
   <script type="module" src="approval.js"></script>
 </body>

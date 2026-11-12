@@ -1,0 +1,60 @@
+
+ RUN  v4.1.12 ~/.cache/foreman/ui-v2/BrowserExtension
+
+ ❯ test/unit/locales.test.ts (5 tests | 2 failed) 34ms
+     × 中文文案用平台中文名「大学 AI 服务平台」，不出现英文平台名 AI Service（Tark#528 第二版） 6ms
+     × 按钮名按拍板改：连接平台账号、停止 / 恢复操作网页、手动接管 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/locales.test.ts > 界面文案 > 中文文案用平台中文名「大学 AI 服务平台」，不出现英文平台名 AI Service（Tark#528 第二版）
+AssertionError: expected [ 'extName', 'extShortName' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "extName",
++   "extShortName",
++ ]
+
+ ❯ test/unit/locales.test.ts:58:18
+     56|   it('中文文案用平台中文名「大学 AI 服务平台」，不出现英文平台名 AI Service（Tark#528 第二版）', () =>…
+     57|     const hits = Object.entries(zh).filter(([, v]) => v.message.includ…
+     58|     expect(hits).toEqual([]);
+       |                  ^
+     59|     expect(zh.extName!.message).toBe('大学 AI 服务平台浏览器助手');
+     60|     expect(zh.brandName!.message).toBe('大学 AI 服务平台');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/unit/locales.test.ts > 界面文案 > 按钮名按拍板改：连接平台账号、停止 / 恢复操作网页、手动接管
+AssertionError: expected [ '登录', 'Sign in' ] to deeply equal [ '连接平台账号', 'Connect account' ]
+
+- Expected
++ Received
+
+  [
+-   "连接平台账号",
+-   "Connect account",
++   "登录",
++   "Sign in",
+  ]
+
+ ❯ test/unit/locales.test.ts:65:52
+     63|
+     64|   it('按钮名按拍板改：连接平台账号、停止 / 恢复操作网页、手动接管', () => {
+     65|     expect([zh.login!.message, en.login!.message]).toEqual(['连接平台账号', …
+       |                                                    ^
+     66|     expect([zh.stop!.message, en.stop!.message]).toEqual(['停止操作网页', 'S…
+     67|     expect([zh.resume!.message, en.resume!.message]).toEqual(['恢复操作网页'…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  12:40:19
+   Duration  246ms (transform 41ms, setup 0ms, import 58ms, tests 34ms, environment 0ms)
+

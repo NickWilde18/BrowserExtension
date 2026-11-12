@@ -1,0 +1,328 @@
+
+Running 32 tests using 1 worker
+
+  ✘   1 test/e2e/approvals.spec.ts:29:1 › 确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝 (5.8s)
+  ✘   2 test/e2e/control-bar.spec.ts:8:1 › 最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管 (2.0m)
+  ✓   3 test/e2e/control-bar.spec.ts:29:1 › 普通用户页不注入；伪造控制消息被拒，保留网页但撤销归属后控制条移除 (725ms)
+  ✓   4 test/e2e/control-bar.spec.ts:49:1 › 已授权给助手但未给注入权限的另一来源，不擅自安装控制条 (580ms)
+  ✓   5 test/e2e/control-bar.spec.ts:58:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (5.2s)
+  ✘   6 test/e2e/popup-layout.spec.ts:20:3 › 已连接 › 页头只写平台名和产品简称，不重复学校名与「浏览器扩展」大标题 (5.4s)
+  ✘   7 test/e2e/popup-layout.spec.ts:30:3 › 已连接 › 四个标签各管一类内容，默认是当前页；数量显示在标签上 (5.4s)
+  ✘   8 test/e2e/popup-layout.spec.ts:46:3 › 已连接 › 设置标签是入口列表，二级页用面包屑回到列表；退出登录在设置标签里 (5.4s)
+  ✘   9 test/e2e/popup-layout.spec.ts:66:3 › 已连接 › 底部整宽按钮：停止操作网页 → 恢复操作网页，停止后当前页有横幅 (5.4s)
+  ✘  10 test/e2e/popup-layout.spec.ts:78:3 › 已连接 › 中文界面用平台中文名，不出现 AI Service (5.8s)
+  ✘  11 test/e2e/popup-layout.spec.ts:90:1 › 未登录：连接平台账号 + 打开平台，没有标签和停止按钮，底部一行链接可进二级页 (5.3s)
+  ✓  12 test/e2e/popup.spec.ts:27:1 › 没有对话时引导先打开平台，不能把页面共享给未知的下一段对话 (436ms)
+  ✓  13 test/e2e/popup.spec.ts:36:1 › 最近用过浏览器的对话有标题：将共享给：<标题>，标题当纯文本 (540ms)
+  ✓  14 test/e2e/popup.spec.ts:47:1 › 最近用过浏览器的对话标题为空：将共享给最近使用浏览器的对话 (445ms)
+  ✘  15 test/e2e/popup.spec.ts:52:1 › 同一站点长期授权和两段对话授权只提供一个移除入口，点击清除全部范围 (2.0m)
+  ✓  16 test/e2e/popup.spec.ts:67:1 › 助手打开的页面可以取消访问，网页保留并移除控制条 (2.9s)
+  ✘  17 test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 (2.0m)
+  ✓  18 test/e2e/transport.spec.ts:86:1 › 平台网页 Cookie 不足以连接；插件独立授权后连上、收到 ready (509ms)
+  ✓  19 test/e2e/transport.spec.ts:106:1 › 执行一个动作，结果经 frames 交回 (111ms)
+  ✓  20 test/e2e/transport.spec.ts:112:1 › 上传：经 uploads 按令牌取文件内容 (807ms)
+  ✓  21 test/e2e/transport.spec.ts:124:1 › 上传：uploads 读到一半断了（字节数不到 Content-Length）：回 action_failed，不把截断的文件放进页面 (321ms)
+  ✓  22 test/e2e/transport.spec.ts:139:1 › 下载：内容经 files 送回 Chat，结果里是 Chat 给的 file_id (1.3s)
+  ✓  23 test/e2e/transport.spec.ts:153:1 › rotate（连接到 5 分钟寿命）：立刻重连，不退避 (58ms)
+  ✓  24 test/e2e/transport.spec.ts:163:1 › 断线：按退避重连 (630ms)
+  ✓  25 test/e2e/transport.spec.ts:171:1 › 401：清掉凭据并停止重连；重新独立授权后恢复 (3.1s)
+  ✓  26 test/e2e/transport.spec.ts:188:1 › 审查结论从轮换后的新连接到达（补充约定 1）：照认，不弹确认小窗 (327ms)
+  ✓  27 test/e2e/transport.spec.ts:213:1 › frames 回 413（结果超过 9 MiB，补充约定 3）：换成 action_failed 的错误结果再发一次 (54ms)
+  ✓  28 test/e2e/transport.spec.ts:219:1 › files 回 413：存 PDF 回 file_too_large；下载回 file_too_large，说明写明动作已经生效 (1.6s)
+  ✓  29 test/e2e/transport.spec.ts:235:1 › stream 回 403（插件没在平台登记）：停住不重连，弹窗提示；点「重新连接」再连 (3.8s)
+  ✓  30 test/e2e/transport.spec.ts:254:1 › 换了平台账号（ready.account 变了，补充约定 4）：清掉上一个账号的对话状态、断开附着，AI 标签不关 (242ms)
+  ✓  31 test/e2e/transport.spec.ts:289:1 › 四通道只 POST、不带 X-Service 和 Cookie，全部用独立凭据 (92ms)
+  ✘  32 test/e2e/transport.spec.ts:302:1 › closed revoked 立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据 (2.0m)
+
+
+  1) test/e2e/approvals.spec.ts:29:1 › 确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝 ────────────────────────────────
+
+    Error: expect(page).toHaveTitle(expected) failed
+
+    Expected pattern: /^Allow the assistant to access this site\? · AI Service$/
+    Received string:  "Allow the assistant to access this site? · AI Services Platform"
+    Timeout: 5000ms
+
+    Call log:
+      - Expect "toHaveTitle" with timeout 5000ms
+        14 × locator resolved to <html lang="en-US">…</html>
+           - unexpected value "Allow the assistant to access this site? · AI Services Platform"
+
+
+      32 |   const win = await approvalWindow(h);
+      33 |   // 页头：校徽 + 「需要你的确认」+ 产品简称；窗口标题带平台名（第二版，Tark#528）。
+    > 34 |   await expect(win).toHaveTitle(/^Allow the assistant to access this site\? · AI Service$/);
+         |                     ^
+      35 |   await expect(win.locator('header')).toContainText('Confirmation required');
+      36 |   await expect(win.locator('header')).toContainText('Browser Assistant');
+      37 |   expect(await win.locator('header img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+        at test/e2e/approvals.spec.ts:34:21
+
+    Error Context: test-results/approvals-确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝/error-context.md
+
+  2) test/e2e/control-bar.spec.ts:8:1 › 最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管 ────────────────────────
+
+    Test timeout of 120000ms exceeded.
+
+    Error: locator.click: Target page, context or browser has been closed
+    Call log:
+      - waiting for locator('#tab-conv')
+
+
+       at helpers.ts:230
+
+      228 | /** 弹窗已连接时按标签分页（当前页 / 站点 / 对话 / 设置）：先点开对应标签，再操作其中的控件。 */
+      229 | export async function openTab(popup: Page, tab: 'page' | 'sites' | 'conv' | 'settings'): Promise<void> {
+    > 230 |   await popup.locator(`#tab-${tab}`).click();
+          |                                      ^
+      231 |   await expect(popup.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
+      232 | }
+      233 |
+        at openTab (test/e2e/helpers.ts:230:38)
+        at test/e2e/control-bar.spec.ts:22:9
+
+    Error Context: test-results/control-bar-最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管/error-context.md
+
+  3) test/e2e/popup-layout.spec.ts:20:3 › 已连接 › 页头只写平台名和产品简称，不重复学校名与「浏览器扩展」大标题 ─────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#tab-page')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('#tab-page')
+
+
+       9 |   const popup = await h.ctx.newPage();
+      10 |   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+    > 11 |   await expect(popup.locator('#tab-page')).toBeVisible();
+         |                                            ^
+      12 |   return popup;
+      13 | };
+      14 |
+        at popupOf (test/e2e/popup-layout.spec.ts:11:44)
+        at test/e2e/popup-layout.spec.ts:21:19
+
+    Error Context: test-results/popup-layout-已连接-页头只写平台名和产品简称，不重复学校名与「浏览器扩展」大标题/error-context.md
+
+  4) test/e2e/popup-layout.spec.ts:30:3 › 已连接 › 四个标签各管一类内容，默认是当前页；数量显示在标签上 ─────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#tab-page')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('#tab-page')
+
+
+       9 |   const popup = await h.ctx.newPage();
+      10 |   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+    > 11 |   await expect(popup.locator('#tab-page')).toBeVisible();
+         |                                            ^
+      12 |   return popup;
+      13 | };
+      14 |
+        at popupOf (test/e2e/popup-layout.spec.ts:11:44)
+        at test/e2e/popup-layout.spec.ts:32:19
+
+    Error Context: test-results/popup-layout-已连接-四个标签各管一类内容，默认是当前页；数量显示在标签上/error-context.md
+
+  5) test/e2e/popup-layout.spec.ts:46:3 › 已连接 › 设置标签是入口列表，二级页用面包屑回到列表；退出登录在设置标签里 ───────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#tab-page')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('#tab-page')
+
+
+       9 |   const popup = await h.ctx.newPage();
+      10 |   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+    > 11 |   await expect(popup.locator('#tab-page')).toBeVisible();
+         |                                            ^
+      12 |   return popup;
+      13 | };
+      14 |
+        at popupOf (test/e2e/popup-layout.spec.ts:11:44)
+        at test/e2e/popup-layout.spec.ts:47:19
+
+    Error Context: test-results/popup-layout-已连接-设置标签是入口列表，二级页用面包屑回到列表；退出登录在设置标签里/error-context.md
+
+  6) test/e2e/popup-layout.spec.ts:66:3 › 已连接 › 底部整宽按钮：停止操作网页 → 恢复操作网页，停止后当前页有横幅 ───────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#tab-page')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('#tab-page')
+
+
+       9 |   const popup = await h.ctx.newPage();
+      10 |   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+    > 11 |   await expect(popup.locator('#tab-page')).toBeVisible();
+         |                                            ^
+      12 |   return popup;
+      13 | };
+      14 |
+        at popupOf (test/e2e/popup-layout.spec.ts:11:44)
+        at test/e2e/popup-layout.spec.ts:67:19
+
+    Error Context: test-results/popup-layout-已连接-底部整宽按钮：停止操作网页-→-恢复操作网页，停止后当前页有横幅/error-context.md
+
+  7) test/e2e/popup-layout.spec.ts:78:3 › 已连接 › 中文界面用平台中文名，不出现 AI Service ──────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#tab-page')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for locator('#tab-page')
+
+
+       9 |   const popup = await h.ctx.newPage();
+      10 |   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+    > 11 |   await expect(popup.locator('#tab-page')).toBeVisible();
+         |                                            ^
+      12 |   return popup;
+      13 | };
+      14 |
+        at popupOf (test/e2e/popup-layout.spec.ts:11:44)
+        at test/e2e/popup-layout.spec.ts:82:19
+
+    Error Context: test-results/popup-layout-已连接-中文界面用平台中文名，不出现-AI-Service/error-context.md
+
+  8) test/e2e/popup-layout.spec.ts:90:1 › 未登录：连接平台账号 + 打开平台，没有标签和停止按钮，底部一行链接可进二级页 ──────────────────
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator:  locator('#login')
+    Expected: "Connect account"
+    Received: "Sign in"
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveText" with timeout 5000ms
+      - waiting for locator('#login')
+        14 × locator resolved to <button id="login" type="button" data-i18n="login" class="primary wide gap">Sign in</button>
+           - unexpected value "Sign in"
+
+
+       98 |     const popup = await ctx.newPage();
+       99 |     await popup.goto(`chrome-extension://${new URL(sw.url()).host}/popup.html`);
+    > 100 |     await expect(popup.locator('#login')).toHaveText('Connect account');
+          |                                           ^
+      101 |     await expect(popup.locator('#gateOpenPlatform')).toBeVisible();
+      102 |     await expect(popup.locator('header')).toContainText('Signed out');
+      103 |     await expect(popup.locator('#tabs')).toBeHidden();
+        at test/e2e/popup-layout.spec.ts:100:43
+
+    Error Context: test-results/popup-layout-未登录：连接平台账号-打开平台，没有标签和停止按钮，底部一行链接可进二级页/error-context.md
+
+  9) test/e2e/popup.spec.ts:52:1 › 同一站点长期授权和两段对话授权只提供一个移除入口，点击清除全部范围 ───────────────────────────────
+
+    Test timeout of 120000ms exceeded.
+
+    Error: locator.click: Target page, context or browser has been closed
+    Call log:
+      - waiting for locator('#tab-sites')
+
+
+       at helpers.ts:230
+
+      228 | /** 弹窗已连接时按标签分页（当前页 / 站点 / 对话 / 设置）：先点开对应标签，再操作其中的控件。 */
+      229 | export async function openTab(popup: Page, tab: 'page' | 'sites' | 'conv' | 'settings'): Promise<void> {
+    > 230 |   await popup.locator(`#tab-${tab}`).click();
+          |                                      ^
+      231 |   await expect(popup.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
+      232 | }
+      233 |
+        at openTab (test/e2e/helpers.ts:230:38)
+        at test/e2e/popup.spec.ts:58:9
+
+    Error Context: test-results/popup-同一站点长期授权和两段对话授权只提供一个移除入口，点击清除全部范围/error-context.md
+
+  10) test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 ────────────────────
+
+    Test timeout of 120000ms exceeded.
+
+    Error: locator.click: Target page, context or browser has been closed
+    Call log:
+      - waiting for locator('#tab-settings')
+
+
+       at helpers.ts:230
+
+      228 | /** 弹窗已连接时按标签分页（当前页 / 站点 / 对话 / 设置）：先点开对应标签，再操作其中的控件。 */
+      229 | export async function openTab(popup: Page, tab: 'page' | 'sites' | 'conv' | 'settings'): Promise<void> {
+    > 230 |   await popup.locator(`#tab-${tab}`).click();
+          |                                      ^
+      231 |   await expect(popup.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
+      232 | }
+      233 |
+        at openTab (test/e2e/helpers.ts:230:38)
+        at test/e2e/server-switch.spec.ts:53:9
+
+    Error Context: test-results/server-switch-高级设置通过真实权限API切服，旧确认-授权-去重不进入同账号新服务器/error-context.md
+
+    Error Context: test-results/server-switch-高级设置通过真实权限API切服，旧确认-授权-去重不进入同账号新服务器/error-context.md
+
+  11) test/e2e/transport.spec.ts:302:1 › closed revoked 立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据 ──────────────
+
+    Test timeout of 120000ms exceeded.
+
+    Error: locator.click: Target page, context or browser has been closed
+    Call log:
+      - waiting for locator('#tab-settings')
+
+
+       at helpers.ts:230
+
+      228 | /** 弹窗已连接时按标签分页（当前页 / 站点 / 对话 / 设置）：先点开对应标签，再操作其中的控件。 */
+      229 | export async function openTab(popup: Page, tab: 'page' | 'sites' | 'conv' | 'settings'): Promise<void> {
+    > 230 |   await popup.locator(`#tab-${tab}`).click();
+          |                                      ^
+      231 |   await expect(popup.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
+      232 | }
+      233 |
+        at openTab (test/e2e/helpers.ts:230:38)
+        at test/e2e/transport.spec.ts:319:9
+
+    Error Context: test-results/transport-closed-revoked-立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据/error-context.md
+
+    Error Context: test-results/transport-closed-revoked-立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据/error-context.md
+
+  11 failed
+    test/e2e/approvals.spec.ts:29:1 › 确认窗：产品身份、页面标题和图标明确，默认键盘焦点在拒绝 ─────────────────────────────────
+    test/e2e/control-bar.spec.ts:8:1 › 最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管 ─────────────────────────
+    test/e2e/popup-layout.spec.ts:20:3 › 已连接 › 页头只写平台名和产品简称，不重复学校名与「浏览器扩展」大标题 ──────────────────────
+    test/e2e/popup-layout.spec.ts:30:3 › 已连接 › 四个标签各管一类内容，默认是当前页；数量显示在标签上 ──────────────────────────
+    test/e2e/popup-layout.spec.ts:46:3 › 已连接 › 设置标签是入口列表，二级页用面包屑回到列表；退出登录在设置标签里 ────────────────────
+    test/e2e/popup-layout.spec.ts:66:3 › 已连接 › 底部整宽按钮：停止操作网页 → 恢复操作网页，停止后当前页有横幅 ────────────────────
+    test/e2e/popup-layout.spec.ts:78:3 › 已连接 › 中文界面用平台中文名，不出现 AI Service ───────────────────────────
+    test/e2e/popup-layout.spec.ts:90:1 › 未登录：连接平台账号 + 打开平台，没有标签和停止按钮，底部一行链接可进二级页 ───────────────────
+    test/e2e/popup.spec.ts:52:1 › 同一站点长期授权和两段对话授权只提供一个移除入口，点击清除全部范围 ────────────────────────────────
+    test/e2e/server-switch.spec.ts:36:1 › 高级设置通过真实权限API切服，旧确认/授权/去重不进入同账号新服务器 ──────────────────────
+    test/e2e/transport.spec.ts:302:1 › closed revoked 立即清凭据、授权和标签归属，停止重连；退出也撤销服务端凭据 ────────────────
+  21 passed (9.1m)

@@ -20,9 +20,9 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 
 ### 独立登录与退出
 
-工具栏点击“登录”后打开 `<平台>/chat/browser-extension/authorize`。参数为 `install_id`、`browser`（chromium/firefox/safari）、`display_name`、`code_challenge`（43 字符）、`code_challenge_method=S256`、`state`；Chromium/Firefox 另带 `identity.getRedirectURL()` 返回的 `redirect_uri`，用 `identity.launchWebAuthFlow` 等待回调。重复点击复用进行中的登录。
+工具栏弹窗点击“连接平台账号”后打开 `<平台>/chat/browser-extension/authorize`。参数为 `install_id`、`browser`（chromium/firefox/safari）、`display_name`、`code_challenge`（43 字符）、`code_challenge_method=S256`、`state`；Chromium/Firefox 另带 `identity.getRedirectURL()` 返回的 `redirect_uri`，用 `identity.launchWebAuthFlow` 等待回调。重复点击复用进行中的登录。
 
-Safari 没有 identity 接口时打开平台授权标签页，只接受该标签页导航到同源 `/chat/browser-extension/callback`；核对 state 后交换凭据，再关闭该授权页。关页、拒绝、state 不符均不保存凭据。校验串和授权过程仅保存在运行期内存；若后台或浏览器退出导致登录中断，重新点击登录即可。
+Safari 没有 identity 接口时打开平台授权标签页，只接受该标签页导航到同源 `/chat/browser-extension/callback`；核对 state 后交换凭据，再关闭该授权页。关页、拒绝、state 不符均不保存凭据。校验串和授权过程仅保存在运行期内存；若后台或浏览器退出导致登录中断，重新点击“连接平台账号”即可。
 
 平台授权页向 `POST /chat/browser/authorize/` 提交确认，返回一次性 code 与已经校验的 redirect_uri（由 UI 实现）。插件向 `POST /chat-service/browser/token` 发送 `{code, code_verifier, install_id, redirect_uri, install_key, install_proof}`，Safari 的 `redirect_uri` 为 `""`，交换请求不发送 browser。`install_key` 是 raw 公钥（65 字节未压缩点），`install_proof` 是安装私钥对 `chat-browser-install-proof/v1\n<install_id>\n<code>`（UTF-8，末尾无换行）的 ECDSA/SHA-256 签名（IEEE P1363，64 字节），两者都是无填充 base64url；Chat 据此确认请求方持有这份安装。浏览器真签样本见 `test/fixtures/install-proof/samples.json`（`node test/probe/install-proof-samples.mjs` 生成），Chromium / Firefox 的密钥持久性实测脚本是 `test/probe/install-key.mjs`（Safari 需在 macOS 上手测）。成功响应直接是 `{credential, account}`。凭据保存在 `storage.local`，绑定当前平台 origin 和安装 ID，不轮换、撤销前有效。旧安装没有凭据时需要独立登录，网页登录或退出不会改变插件登录。
 
@@ -37,7 +37,7 @@ pnpm install
 PLATFORM_ORIGIN=https://<平台对外地址> pnpm build        # 产物在 dist/；也可以写 pnpm build --platform-origin https://…
 ```
 
-- 平台对外地址是用户地址栏里的那个，manifest 的初始主机权限由它生成。工具栏「高级设置」可切换单个活动服务器；只保存平台连接 origin，不保存第三方网页 URL。切换需要用户手势申请对应来源权限，旧请求、授权、页归属、接管与连接清理完成后才连接新服务器。
+- 平台对外地址是用户地址栏里的那个，manifest 的初始主机权限由它生成。弹窗「设置 → 高级设置」可切换单个活动服务器；只保存平台连接 origin，不保存第三方网页 URL。切换需要用户手势申请对应来源权限，旧请求、授权、页归属、接管与连接清理完成后才连接新服务器。
 - 构建时从 `playwright-core`（版本钉死 1.62.1）取出页面注入脚本，许可（Apache-2.0）随产物放在
   `dist/third_party/playwright/`。换版本时 `scripts/extract-injected.mjs` 的结构断言会先失败。
 - 生产构建检查产物：不含测试用的假传输与测试入口，含真实传输，不出现 `X-Service`。`--fake-transport` 只能和
@@ -91,13 +91,13 @@ Linux Chromium 已验证只读原型和独立登录的本地真实扩展 E2E。F
 
 ## 网页控制与确认结果
 
-已归属/共享的页面可从可信工具栏申请当前来源权限并显示顶层控制条。控制条与调试附着独立，只显示对话标题和动作。点击接管会取消本对话请求并等待释放；完成后显示已接管，其它对话继续。恢复只进入重新观察状态，成功 `read` 前禁止写入，不重放取消动作。最后一页关闭后仍能在工具栏逐对话恢复；全局「恢复」不解除对话接管。普通键鼠活动不自动触发接管。
+已归属/共享的页面可从可信工具栏申请当前来源权限并显示顶层控制条。控制条与调试附着独立，只显示对话标题和动作。点击接管会取消本对话请求并等待释放；完成后显示已接管，其它对话继续。恢复只进入重新观察状态，成功 `read` 前禁止写入，不重放取消动作。最后一页关闭后仍能在工具栏逐对话恢复；全局「恢复操作网页」不解除对话接管。普通键鼠活动不自动触发接管。
 
-工具栏「停止」取消当前操作并释放附着，保留网页；它不是可从中间继续的暂停。站点、密码、自输完成、脚本、上传、跨站确认超时返回 `approval_timeout`；明确拒绝、关窗、Esc 仍返回 `user_denied`。操作此前可能已经产生效果，不能自动重试。下载沿用动作已生效的结果：明确拒绝返回 `ok` 和 `payload.download_denied=true`；确认超时另加 `payload.download_timed_out=true`。
+弹窗底部「停止操作网页」取消当前操作并释放附着，保留网页；它不是可从中间继续的暂停。站点、密码、自输完成、脚本、上传、跨站确认超时返回 `approval_timeout`；明确拒绝、关窗、Esc 仍返回 `user_denied`。操作此前可能已经产生效果，不能自动重试。下载沿用动作已生效的结果：明确拒绝返回 `ok` 和 `payload.download_denied=true`；确认超时另加 `payload.download_timed_out=true`。
 
 结果帧可附 `approvals`，按顺序记录本次逐次确认的种类、来源和结论，不带站点、文件名或脚本内容。缺字段表示未记录，空数组表示执行期间无需确认；Chat 将它原样放入操作记录详情。到时未确认的窗口保留过期说明，用户关闭后清理。
 
-设计状态集 07 的界面实施、回归证据和受阻项见 `docs/ui-redesign-validation.md`。历史分段证据见 `docs/server-settings-validation.md`、`docs/control-bar-validation.md` 与 `docs/execution-capabilities-validation.md`。本轮不增加插件审计数据库。
+界面第二版（标签页结构、命名与验证）见 `docs/ui-v2-validation.md`；设计状态集 07 的界面实施、回归证据和受阻项见 `docs/ui-redesign-validation.md`。历史分段证据见 `docs/server-settings-validation.md`、`docs/control-bar-validation.md` 与 `docs/execution-capabilities-validation.md`。本轮不增加插件审计数据库。
 
 ## 页面快照格式
 
@@ -141,7 +141,7 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
 - **第 4 项 调试提示条**：「"<插件名>" started debugging this browser [Cancel] [×]」出现在工具栏下方，**整个窗口
   都有**（用户自己没被附着的标签上也有），把当前显示的标签页往下推 56 像素（后台标签不受影响，截图不包含它）。
   点「Cancel」和点「×」效果相同：调试接口以 `canceled_by_user` 断开插件的**全部**附着；插件置为已停止，不重新
-  附着，之后的请求回 `user_stopped`，直到用户在弹窗里点「恢复」。
+  附着，之后的请求回 `user_stopped`，直到用户在弹窗里点「恢复操作网页」。
 - **第 5 项 分发**：没测。eb 不在校园网，测不了 Edge 加载项商店在校园网的可达性；开发者模式安装见上。
 - **第 6 项 文件、iframe、对话框**：上传在页面里构造 `File` 放进文件框，页面的 `change` 监听收到正确内容（含藏在按钮
   后面的文件框：插件拦下文件选择框拿到背后的文件框）。下载两条路都要：导航类下载（附件链接、跨源的文件地址、表单
@@ -161,7 +161,7 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
   分组已成功而命名失败或超时时，保留真实分组和拖出撤权，只放弃组名。每次新建页重新尝试，不按品牌或 UA 判断，不持久化浏览器能力结论。
   超时仅表示本次未及时完成，不表示浏览器永不支持。
 - 两种模式都只控制本对话创建的页和用户明确共享的页。分组页拖出 AI 组会撤销该页控制；普通页没有这一拖出入口，关闭该页会从登记中移除。
-  工具栏「停止」与浏览器调试提示条「取消」停止当前操作并断开全部调试附着，保留标签归属；恢复后仍可复用。整轮 `release` 只释放该轮附着。
+  弹窗「停止操作网页」与浏览器调试提示条「取消」停止当前操作并断开全部调试附着，保留标签归属；恢复后仍可复用。整轮 `release` 只释放该轮附着。
   `browser_close` 清除该对话标签归属，`keep_tabs: true` 时保留网页；换账号清除全部归属和共享，保留网页。用户共享页还可通过工具栏「取消共享」退出。
 - 页面读取（DOM 读取后端）进行中时，取消共享、关闭或结束本对话的标签、撤销或清除站点授权、在浏览器里移除该站点权限，都会让这次读取立即以撤销错误返回，迟到的页面内容被丢弃；
   只作废同一对话、同一标签、同一站点的读取，其他站点和对话不受影响。撤销后再授权只对新的读取生效。
@@ -172,7 +172,7 @@ YAML 形态，可交互的元素带 `[ref=e12]`。iframe 的内容缩进拼在 `
   `release`；插件取消该轮仍在执行或排队的动作，只释放该轮持有的附着，保留网页与平台连接，然后回 `released`。
   平台保存未确认释放并在重连或心跳时补投；重复或迟到的旧轮释放不影响新轮及其他对话，已结束轮的迟到动作不执行。
   旧服务没有 `turn_id` 的请求沿用原有空闲回收。
-- 确认使用独立窗口，页内显示「AI Service 浏览器助手」图标、动作和站点；请求带有真实对话标题时显示来源，没有则隐藏。
+- 确认使用独立窗口，页头显示校徽、「需要你的确认」与「浏览器助手」，正文是动作和站点；窗口标题带平台名；请求带有真实对话标题时显示来源，没有则隐藏。
   窗口标题同步动作与助手名称，按内容调整高度；长脚本可聚焦后用键盘滚动，操作按钮留在底部，支持浅色与深色主题。
   初始焦点在「拒绝」。页内「关闭」、Esc 和原生窗口关闭都只拒绝当前请求；浏览器调试提示条的「取消」仍表示全局停止。
 - AI 动作期间会新开标签的链接、表单、`window.open`，在当前 AI 标签里打开（原来的页面在历史里，可以后退）。

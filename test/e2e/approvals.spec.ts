@@ -1,7 +1,7 @@
 // 把关流程：站点授权、跨站跳转拦截、逐次确认（密码框、上传、下载、脚本）、Auto Mode 下的审批帧。
 import { expect, test } from '@playwright/test';
 
-import { A, B, CONV2, actOnPrompt, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, sent } from './helpers';
+import { A, B, CONV2, actOnPrompt, aiPage, allowSite, answer, approvalWindow, call, launch, refOf, result, send, sent, openTab } from './helpers';
 import type { Harness } from './helpers';
 
 let h: Harness;
@@ -30,8 +30,10 @@ test('确认窗：产品身份、页面标题和图标明确，默认键盘焦�
   h = await launch({ realViewport: true });
   const pending = call(h, 'open', { url: `${A}/form.html` }, { title: '课程 <b>报名</b>' });
   const win = await approvalWindow(h);
-  await expect(win).toHaveTitle(/Allow the assistant to access this site\? · AI Services Platform/);
-  await expect(win.locator('header')).toContainText('AI Services Platform');
+  // 页头：校徽 + 「需要你的确认」+ 产品简称；窗口标题带平台名（第二版，Tark#528）。
+  await expect(win).toHaveTitle(/^Allow the assistant to access this site\? · AI Service$/);
+  await expect(win.locator('header')).toContainText('Confirmation required');
+  await expect(win.locator('header')).toContainText('Browser Assistant');
   expect(await win.locator('header img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   const icon = await win.locator('link[rel="icon"]').getAttribute('href');
   expect(icon).toBeTruthy();
@@ -154,6 +156,7 @@ test('站点授权：总是允许，换对话也不问；弹窗里能撤销', as
   // 弹窗页面里点撤销。
   const popup = await h.ctx.newPage();
   await popup.goto(`chrome-extension://${h.extId}/popup.html`);
+  await openTab(popup, 'sites');
   await popup.locator('#sites button').first().click();
   await expect.poll(async () => (await h.sw.evaluate(() => (globalThis as any).__bxTest.popupState())).sites.always).toEqual([]);
 });

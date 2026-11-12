@@ -1,21 +1,24 @@
 /*
- * 插件页面共用的设计规范（设计状态集 07 的语义变量是颜色权威值）：插件弹窗、确认窗引用；网页控制条在 shadow root
- * 里另有一份同值的变量（src/controlbar/page.ts），改颜色时两处一起改。
- * 字号：主标题 20、平台名 17、区块标题 13–15、正文 13–14、辅助 11–12；间距 4/8/12/16/20/24；按钮圆角 4、容器 5。
+ * 插件页面共用的设计规范（第二版，Tark#528 拍板 rev 531）：沿用设计状态集 07 的校徽与紫色语义色，控件改成 6/8px 圆角、
+ * 更紧凑的页头；插件弹窗、确认窗引用。网页控制条在 shadow root 里另有一份同值的变量（src/controlbar/page.ts），改颜色时两处一起改。
+ * 字号：页头 14、标题 17–18、正文 13、辅助 11–12；间距 4/8/12/14；按钮圆角 6、卡片 8。
  */
 :root {
-  --bg: #fff; --soft: #f8f7f9; --fg: #252327; --muted: #625c68; --line: #ddd8e2;
+  --bg: #fff; --card: #f8f7f9; --sunk: #f1eff3; --fg: #252327; --muted: #625c68; --line: #e4e0e8;
   --purple: #751276; --purple-soft: #f3e8f3; --on-purple: #fff;
   --danger: #963b40; --danger-soft: #fdf1f1; --warn: #80570d; --warn-soft: #fff5df; --ok: #316347; --ok-soft: #edf6ef;
-  --watermark-opacity: .04;
+  --shadow: 0 1px 2px #2a0f2b0f;
+  /* 背景校徽水印：亮色灰度 7.5%；暗色反相再略提亮，避免发灰发脏。 */
+  --watermark-opacity: .075; --watermark-filter: grayscale(1);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #232126; --soft: #2b282f; --fg: #eeebf0; --muted: #b9b1bf; --line: #46404c;
+    --bg: #232126; --card: #2b282f; --sunk: #1d1b20; --fg: #eeebf0; --muted: #b9b1bf; --line: #403a46;
     --purple: #dda2df; --purple-soft: #3d2941; --on-purple: #28172d;
     --danger: #efb1b5; --danger-soft: #402c32; --warn: #edc477; --warn-soft: #3d3426; --ok: #a5d4b5; --ok-soft: #29392f;
-    --watermark-opacity: .055;
+    --shadow: none;
+    --watermark-opacity: .07; --watermark-filter: grayscale(1) invert(1) brightness(1.15);
     color-scheme: dark;
   }
 }
@@ -23,87 +26,91 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font: 13px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   background: var(--bg); color: var(--fg);
 }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: 20px; line-height: 1.4; font-weight: 600; text-wrap: balance; }
-h2 { font-size: 15px; line-height: 1.5; font-weight: 600; }
-h3 { font-size: 14px; line-height: 1.5; font-weight: 600; }
-p { font-size: 13px; line-height: 1.8; }
+h1 { font-size: 17px; line-height: 1.4; font-weight: 600; text-wrap: balance; }
+h2 { font-size: 13px; line-height: 1.5; font-weight: 600; }
+p { font-size: 13px; line-height: 1.7; }
 [hidden] { display: none !important; }
 .muted { color: var(--muted); }
-.tiny { font-size: 11px; line-height: 1.7; }
-.small { font-size: 12px; line-height: 1.7; }
-.gap { margin-top: 12px; }
-.space { margin-top: 18px; }
+.hint { color: var(--muted); font-size: 11.5px; line-height: 1.7; }
+svg.i { width: 16px; height: 16px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 button, input, select { font: inherit; }
 button {
-  cursor: pointer; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg);
-  padding: 7px 11px; line-height: 1.4; font-size: 13px;
+  cursor: pointer; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+  padding: 0 12px; min-height: 34px; font-size: 13px; font-weight: 500; line-height: 1.35;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
-button:hover { background: var(--soft); }
-button:disabled { cursor: default; opacity: .5; }
+button:hover { background: var(--card); }
+button:disabled { cursor: default; opacity: .45; }
 button:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid var(--purple); outline-offset: 3px;
+  outline: 2px solid var(--purple); outline-offset: 2px;
 }
 button.primary { background: var(--purple); border-color: var(--purple); color: var(--on-purple); }
-button.danger { color: var(--danger); border-color: var(--danger); }
-/* 文字按钮不只靠颜色：带下划线。 */
-button.link {
-  border: 0; background: transparent; color: var(--purple); padding: 3px 0; font-size: 12px;
-  text-decoration: underline; text-underline-offset: 3px;
-}
-button.quiet { padding: 3px 7px; color: var(--muted); font-size: 12px; }
-button.wide { width: 100%; min-height: 39px; }
+button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+button.wide { width: 100%; min-height: 38px; }
+/* 文字按钮：无边框；accent 用紫色，danger-text 用红色。 */
+button.text { min-height: 0; border: 0; background: transparent; padding: 3px 4px; color: var(--muted); font-size: 12px; font-weight: 400; }
+button.text:hover { background: transparent; color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+button.text.accent { color: var(--purple); }
+button.text.danger-text { color: var(--danger); }
+button.icon { width: 30px; min-height: 30px; padding: 0; border-color: transparent; background: transparent; color: var(--muted); }
+button.icon:hover { background: var(--sunk); color: var(--fg); }
 input[type=text], input[type=url], input[type=search] {
   display: block; width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); color: var(--fg);
-  padding: 7px 9px; border-radius: 4px; font-size: 13px;
+  padding: 7px 10px; border-radius: 6px; font-size: 13px;
 }
 input.invalid, input[aria-invalid=true] { border-color: var(--danger); }
-.field-error { font-size: 12px; color: var(--danger); margin: 7px 0; }
+.field-error { font-size: 12px; color: var(--danger); margin: 6px 0; }
 
+/* 页头：校徽 + 两行名称；弹窗右侧是状态胶囊，确认窗右侧是关闭按钮。 */
 .brand {
-  padding: 15px 17px 13px; display: flex; gap: 10px; align-items: center; border-bottom: 3px solid var(--purple);
-  position: relative; z-index: 1; background: var(--bg); flex-shrink: 0;
+  height: 54px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--line); background: var(--bg); position: relative; z-index: 2;
 }
-.brand img { width: 42px; height: 42px; object-fit: contain; transform: scale(1.18); }
-.brand strong { display: block; font-size: 17px; font-weight: 600; line-height: 1.4; }
-.brand small { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; }
+.brand > img { width: 32px; height: 32px; object-fit: contain; }
+.brand-name { flex: 1; min-width: 0; line-height: 1.3; }
+.brand-name strong, .brand-name small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-name strong { font-size: 14px; font-weight: 600; }
+.brand-name small { font-size: 11px; color: var(--muted); }
+
+.watermark { position: absolute; right: -36px; bottom: 54px; width: 270px; opacity: var(--watermark-opacity); filter: var(--watermark-filter); pointer-events: none; z-index: 0; }
+.card { background: color-mix(in srgb, var(--card) 80%, transparent); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+.label { font-size: 11px; color: var(--muted); display: block; }
 
 .notice {
   padding: 10px 12px; border-left: 3px solid var(--warn); background: var(--warn-soft); color: var(--warn);
-  font-size: 12px; line-height: 1.8; overflow-wrap: anywhere;
+  font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; border-radius: 0 6px 6px 0;
 }
-.notice.neutral { color: var(--muted); border-left-color: var(--line); background: var(--soft); }
+.notice.neutral { color: var(--muted); border-left-color: var(--line); background: var(--card); }
 .notice.error { color: var(--danger); border-left-color: var(--danger); background: var(--danger-soft); }
 .notice.success { color: var(--ok); border-left-color: var(--ok); background: var(--ok-soft); }
 
-.status-line { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; color: var(--muted); margin: 10px 0 14px; overflow-wrap: anywhere; }
-.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex-shrink: 0; margin-top: 6px; }
-.dot.warn { background: var(--warn); }
-.dot.purple { background: var(--purple); }
-.dot.error { background: var(--danger); }
+.status-line { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); margin: 10px 0; overflow-wrap: anywhere; }
 .spinner {
-  display: inline-block; width: 13px; height: 13px; flex-shrink: 0; border: 1.5px solid var(--line); border-top-color: var(--purple);
-  border-radius: 50%; margin-top: 4px; animation: spin .9s linear infinite;
+  display: inline-block; width: 14px; height: 14px; flex-shrink: 0; border: 2px solid color-mix(in srgb, var(--purple) 25%, transparent);
+  border-top-color: var(--purple); border-radius: 50%; animation: spin .9s linear infinite;
 }
 
-.fact {
-  padding: 11px 12px; background: var(--soft); border: 1px solid var(--line); border-radius: 4px; margin: 13px 0;
-  font-size: 13px; overflow-wrap: anywhere;
-}
-.fact label, .fact .label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
-.fact strong { font-size: 14px; font-weight: 550; display: block; }
-.fact .label:not(:first-child) { margin-top: 12px; }
+.fact { padding: 10px 12px; margin: 12px 0; font-size: 13px; overflow-wrap: anywhere; background: color-mix(in srgb, var(--card) 80%, transparent); border: 1px solid var(--line); border-radius: 8px; }
+.fact .label:not(:first-child) { margin-top: 10px; }
+.fact strong { font-size: 14px; font-weight: 600; display: block; }
 
-.actions { display: flex; gap: 9px; justify-content: flex-end; align-items: stretch; flex-wrap: wrap; }
-.actions > * { flex: 0 1 auto; }
-.actions button { min-height: 34px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.actions button { min-height: 38px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 
 details { font-size: 12px; color: var(--muted); }
 summary { cursor: pointer; line-height: 1.7; font-size: 12px; color: var(--purple); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+/* 确认窗里「总是允许此站点」「我自己输入」这类更宽松或旁路的选项：文字按钮，不比主按钮显眼。 */
+button.link {
+  min-height: 0; border: 0; background: transparent; color: var(--purple); padding: 3px 0; font-size: 12px; font-weight: 400;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+button.link:hover { background: transparent; }
