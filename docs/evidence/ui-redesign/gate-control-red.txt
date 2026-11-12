@@ -1,0 +1,143 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ✓ test/unit/approval.test.ts > 确认窗：独立打开并留给页面按内容调整高度 > 短确认不再预留固定 600px 高度，仍使用独立 popup 并获得焦点 4ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > 对得上的 approval 交出结论 4ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > request_id 不对 → ask_user 0ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > kind 与发出时不同 → ask_user 0ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > kind 不在五类里 → ask_user 0ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > decision 不认识 → ask_user 0ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > 不认识的 approval_id 忽略；15 秒没回按 ask_user，之后再来的放行不算数 1ms
+ ✓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > block 带理由 0ms
+ ✓ test/unit/approval.test.ts > 旧连接上开始的请求，它的 approval / cancel 从后来的连接到达（补充约定 1） > 审查结论从轮换（rotate）后的新连接到达：照认 2ms
+ ✓ test/unit/approval.test.ts > 旧连接上开始的请求，它的 approval / cancel 从后来的连接到达（补充约定 1） > 断线重连之后也一样：等结论期间连接断了不按 ask_user，新连接上来的结论照认；cancel 同样按 request_id 认 1ms
+ × test/unit/approval.test.ts > Gate：先问审查、再问用户 > 审查放行：不弹小窗、不发进度，计时暂停又恢复 5ms
+   → expected [] to deeply equal [ Array(1) ]
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关
+ × test/unit/approval.test.ts > Gate：先问审查、再问用户 > 弹窗等用户期间告诉控制条这段对话在等确认，答完撤销 1ms
+   → expected [] to deeply equal [ [ 'C1', true ] ]
+ × test/unit/approval.test.ts > Gate：先问审查、再问用户 > 每次确认把结果类别记到请求上下文（不含站点、文件名等内容） 2ms
+   → expected [] to deeply equal [ …(3) ]
+ ✓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 审查拦下：小窗带理由，用户定；前后发 awaiting_user / working 2ms
+ ✓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 确认窗带上请求已有的会话标题；没有标题时不补造来源 3ms
+ ✓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 开关关掉或没连上：不发审批请求，直接问用户；站点的两种允许映射到范围 3ms
+ ✓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 等用户超时、用户关掉小窗都按拒绝 32ms
+ ✓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 密码框「我自己输入」：小窗留着，切到完成阶段 2ms
+ ✓ test/unit/control.test.ts > 显式对话接管 > 释放确认前保持接管中并阻止本对话，其他对话不受影响 58ms
+ × test/unit/control.test.ts > 显式对话接管 > 等确认是对话级计数：最后一个确认结束才撤销；只在显示变化时通知刷新；多余的撤销不变负数 3ms
+   → expected undefined to be false // Object.is equality
+ ✓ test/unit/control.test.ts > 显式对话接管 > 恢复后必须先成功读取；迟到旧读取不能解除新的接管 1ms
+ ✓ test/unit/control.test.ts > 显式对话接管 > 后台恢复接管中状态时先完成释放，已接管和待观察状态跨后台重建保留 51ms
+ ✓ test/unit/control.test.ts > 显式对话接管 > 后台在释放中回收，持久状态不得提前声称已经释放 52ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/approval.test.ts > Gate：先问审查、再问用户 > 审查放行：不弹小窗、不发进度，计时暂停又恢复
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "by": "review",
+-     "kind": "site",
+-     "outcome": "allow",
+-   },
+- ]
++ []
+
+ ❯ test/unit/approval.test.ts:226:23
+    224|     expect([ctx.pauses, ctx.resumes]).toEqual([1, 1]);
+    225|     expect(awaiting).toEqual([]);
+    226|     expect(ctx.notes).toEqual([{ kind: 'site', by: 'review', outcome: …
+       |                       ^
+    227|   });
+    228|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/unit/approval.test.ts > Gate：先问审查、再问用户 > 弹窗等用户期间告诉控制条这段对话在等确认，答完撤销
+AssertionError: expected [] to deeply equal [ [ 'C1', true ] ]
+
+- Expected
++ Received
+
+- [
+-   [
+-     "C1",
+-     true,
+-   ],
+- ]
++ []
+
+ ❯ test/unit/approval.test.ts:243:22
+    241|     const p = gate.confirm(gateCtx(), { kind: 'upload', site: 'https:/…
+    242|     await until(() => windows.opened.length > 0);
+    243|     expect(awaiting).toEqual([['C1', true]]);
+       |                      ^
+    244|     prompts.answer(windows.opened[0]!.id, windows.opened[0]!.windowId,…
+    245|     await p;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/unit/approval.test.ts > Gate：先问审查、再问用户 > 每次确认把结果类别记到请求上下文（不含站点、文件名等内容）
+AssertionError: expected [] to deeply equal [ …(3) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "by": "user",
+-     "kind": "site",
+-     "outcome": "allow_always",
+-   },
+-   {
+-     "by": "user",
+-     "kind": "script",
+-     "outcome": "deny",
+-   },
+-   {
+-     "by": "user",
+-     "kind": "download",
+-     "outcome": "timeout",
+-   },
+- ]
++ []
+
+ ❯ test/unit/approval.test.ts:262:23
+    260|     await gate.confirm({ ...ctx, authWait: { remainingMs: () => 0, con…
+    261|       { kind: 'download', site: 'https://a.test', reviewDetail: {}, pr…
+    262|     expect(ctx.notes).toEqual([
+       |                       ^
+    263|       { kind: 'site', by: 'user', outcome: 'allow_always' },
+    264|       { kind: 'script', by: 'user', outcome: 'deny' },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/unit/control.test.ts > 显式对话接管 > 等确认是对话级计数：最后一个确认结束才撤销；只在显示变化时通知刷新；多余的撤销不变负数
+AssertionError: expected undefined to be false // Object.is equality
+
+- Expected:
+false
+
++ Received:
+undefined
+
+ ❯ test/unit/control.test.ts:32:39
+     30|     const control = new ConversationControl(new MemoryKV(), async () =…
+     31|     await control.ready;
+     32|     expect(control.view('A').waiting).toBe(false);
+       |                                       ^
+     33|     control.awaitingUser('A', true);
+     34|     control.awaitingUser('A', true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 19 passed | 1 skipped (24)
+   Start at  00:51:48
+   Duration  428ms (transform 304ms, setup 0ms, import 350ms, tests 230ms, environment 0ms)
+

@@ -1,0 +1,43 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/site-lifecycle.test.ts (3 tests | 1 failed) 10ms
+     × 同时撤销两个站点时两次清理都必须执行 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/site-lifecycle.test.ts > 授权清理与旧回调的交错 > 同时撤销两个站点时两次清理都必须执行
+AssertionError: expected { Object (always, conversation) } to deeply equal { always: [], conversation: {} }
+
+- Expected
++ Received
+
+  {
+-   "always": [],
+-   "conversation": {},
++   "always": [
++     "https://one.test",
++   ],
++   "conversation": {
++     "A": [
++       "https://one.test",
++     ],
++   },
+  }
+
+ ❯ test/unit/site-lifecycle.test.ts:27:32
+     25|     await sites.grant('A', 'https://two.test', 'conversation');
+     26|     await Promise.all([sites.revoke('https://one.test'), sites.revoke(…
+     27|     expect(await sites.list()).toEqual({ always: [], conversation: {} …
+       |                                ^
+     28|   });
+     29|   it('换账号清理时旧grant还在等读存储，不能在clear后重新加回授权', async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  15:40:51
+   Duration  208ms (transform 67ms, setup 0ms, import 86ms, tests 10ms, environment 0ms)
+

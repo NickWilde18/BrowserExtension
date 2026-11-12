@@ -1,0 +1,5 @@
+# pnpm 11 起依赖的安装脚本要显式表态，否则安装直接报错。
+# esbuild 的 postinstall 只校验平台二进制（二进制本身来自 optionalDependencies），
+# 不跑也能用；写 false 保持「不执行第三方安装脚本」。
+allowBuilds:
+  esbuild: false

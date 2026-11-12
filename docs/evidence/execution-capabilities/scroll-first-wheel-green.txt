@@ -1,0 +1,10 @@
+
+Running 5 tests using 1 worker
+
+  ✓  1 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (722ms)
+  ✓  2 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (729ms)
+  ✓  3 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (731ms)
+  ✓  4 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (747ms)
+  ✓  5 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (723ms)
+
+  5 passed (5.6s)

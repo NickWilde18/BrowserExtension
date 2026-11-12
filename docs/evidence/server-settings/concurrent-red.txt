@@ -1,0 +1,33 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/server-settings.test.ts (7 tests | 1 failed | 6 skipped) 60ms
+     × 两个设置页同时通过权限检查，也只允许一次切换提交 59ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/server-settings.test.ts > 单活动服务器设置 > 两个设置页同时通过权限检查，也只允许一次切换提交
+AssertionError: expected [ { ok: true }, { ok: true } ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ test/unit/server-settings.test.ts:70:41
+     68|     release.forEach((resolve) => resolve(true));
+     69|     const results = await Promise.all([first, second]);
+     70|     expect(results.filter((r) => r.ok)).toHaveLength(1);
+       |                                         ^
+     71|     expect(create).toHaveBeenCalledTimes(2);
+     72|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 6 skipped (7)
+   Start at  13:52:00
+   Duration  220ms (transform 39ms, setup 0ms, import 53ms, tests 60ms, environment 0ms)
+

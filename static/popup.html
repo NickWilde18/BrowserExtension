@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser extension</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="brand"><img src="icons/emblem.png" alt=""><div><strong data-i18n="brandName"></strong><small data-i18n="brandUniversity"></small></div></header>
+  <img class="watermark" src="icons/emblem.png" alt="">
+  <main>
+    <div id="homeView">
+      <h1 data-i18n="popupTitle"></h1>
+      <div class="status-line"><i id="connectionMarker" class="dot"></i><div><span id="state"></span><span id="accountRow" hidden> · <span id="account"></span></span></div></div>
+      <p id="executionHint" class="notice neutral" hidden></p>
+      <button class="wide" id="openPlatform" type="button" data-i18n="openPlatform" hidden></button>
+      <button id="reconnect" class="wide" type="button" data-i18n="reconnect" hidden></button>
+      <button id="login" class="primary wide gap" type="button" data-i18n="login" hidden></button>
+      <button id="logout" class="link gap" type="button" data-i18n="logout" hidden></button>
+      <p id="authError" class="field-error" role="status" hidden></p>
+      <div id="connectedBody">
+        <section class="page-card">
+          <div class="small muted" data-i18n="currentPage"></div><div id="pageDomain" class="domain"></div>
+          <p id="pageExplanation"></p>
+          <button id="share" class="primary wide gap" type="button" data-i18n="share" hidden></button>
+          <p id="shareTarget" class="hint"></p>
+          <div id="sharedRow" hidden><p id="sharedOwner" class="small"></p><button id="unshare" class="wide gap" type="button" data-i18n="unshare"></button></div>
+          <p id="shareNote" class="hint" data-i18n="shareHint" hidden></p>
+          <button id="showControls" class="link gap" type="button" data-i18n="showControls" hidden></button>
+          <p id="controlsHint" class="hint" data-i18n="controlsHint" hidden></p>
+          <p id="controlsError" class="field-error" role="status" hidden></p>
+        </section>
+        <section id="controlledSection" class="section" hidden><h2 data-i18n="controlledConversations"></h2><ul id="controlledConversations"></ul><p class="hint" data-i18n="controlledHint"></p></section>
+        <section class="section"><h2 class="section-heading"><span data-i18n="sites"></span><small id="siteCount"></small></h2><p class="hint" data-i18n="sitesRemovalHint"></p><input id="siteFilter" type="search" class="gap" hidden><ul id="sites" tabindex="0"></ul><p id="sitesNone" class="hint" data-i18n="sitesNone"></p></section>
+        <section class="section"><h2 class="section-heading" data-i18n="thisBrowser"></h2><div id="nameSummary" class="device"><span id="browserName"></span><button id="rename" class="link" type="button" data-i18n="rename"></button></div><form id="nameForm" hidden><label class="tiny muted" for="displayName" data-i18n="displayName"></label><div class="row"><input id="displayName" type="text" maxlength="64"><button id="saveName" type="submit" data-i18n="save"></button></div><p id="nameError" class="field-error" hidden data-i18n="nameRequired"></p><p class="hint" data-i18n="displayNameHint"></p></form></section>
+      </div>
+      <div class="section"><details id="privacy"><summary data-i18n="privacyTitle"></summary><p data-i18n="privacyAccess"></p><p data-i18n="privacyBody"></p><p data-i18n="privacyRetention"></p></details><button id="openSettings" class="link gap" type="button" data-i18n="advancedSettings"></button></div>
+    </div>
+    <div id="settingsView" hidden>
+      <h1 data-i18n="advancedSettings"></h1><p class="hint" data-i18n="settingsIntro"></p>
+      <details id="advanced" open>
+        <summary data-i18n="serverOriginLabel"></summary>
+        <label class="form-label" data-i18n="currentPlatform"></label><div id="currentOrigin" class="readonly"></div>
+        <label class="form-label" for="serverOrigin" data-i18n="newPlatform"></label><input id="serverOrigin" type="url" inputmode="url" autocomplete="off" spellcheck="false" aria-describedby="serverOriginHint serverSwitchHint serverPermissionHint serverError">
+        <p id="serverOriginHint" class="hint" data-i18n="serverOriginHint"></p>
+        <p id="serverPermissionHint" class="notice neutral gap" data-i18n="serverPermissionHint" hidden></p>
+        <div id="switchConfirmation" class="notice gap" hidden><p id="serverSwitchHint" data-i18n="serverSwitchHint"></p></div>
+        <button id="saveServer" class="primary wide gap" type="button" data-i18n="settingsNext" disabled></button>
+        <button id="cancelSwitch" class="wide gap" type="button" data-i18n="cancel" hidden></button>
+        <button id="restoreDefault" class="link gap" type="button" data-i18n="restoreDefault"></button>
+        <p id="serverError" class="hint gap" role="status" aria-live="polite" hidden></p>
+      </details>
+      <button class="link space" type="button" data-back data-i18n="backExtension"></button>
+    </div>
+    <div id="aboutView" hidden><h1 data-i18n="aboutTitle"></h1><section class="section"><h2 data-i18n="helpFeedback"></h2><p class="muted gap" data-i18n="helpOffice"></p><p class="hint" data-i18n="helpPending"></p></section><section class="section"><h2 data-i18n="jointDevelopment"></h2><p class="gap" data-i18n="developmentPending"></p></section><p class="hint space" data-i18n="copyright"></p><button class="link space" type="button" data-back data-i18n="backExtension"></button></div>
+  </main>
+  <footer>
+    <div id="stoppedRow" hidden><p class="stop-status" data-i18n="stopped"></p><p class="hint" data-i18n="globalResumeHint"></p><button id="resume" class="primary wide" type="button" data-i18n="resume"></button></div>
+    <div id="stopRow"><p class="hint" data-i18n="stopHint"></p><button id="stop" class="danger wide" type="button" data-i18n="stop"></button></div>
+    <div class="footer-contact"><span data-i18n="helpFeedback"></span><button id="about" class="link" type="button" data-i18n="about"></button></div>
+  </footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

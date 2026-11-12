@@ -1,0 +1,9 @@
+
+Running 4 tests using 1 worker
+
+  ✓  1 test/e2e/control-bar.spec.ts:7:1 › 最后一页关闭后，可信popup可恢复指定对话，全局恢复不会越过对话接管 (898ms)
+  ✓  2 test/e2e/control-bar.spec.ts:28:1 › 普通用户页不注入；伪造控制消息被拒，保留网页但撤销归属后控制条移除 (629ms)
+  ✓  3 test/e2e/control-bar.spec.ts:48:1 › 已授权给助手但未给注入权限的另一来源，不擅自安装控制条 (550ms)
+  ✓  4 test/e2e/control-bar.spec.ts:57:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (1.4s)
+
+  4 passed (4.0s)

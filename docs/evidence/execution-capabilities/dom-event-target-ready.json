@@ -1,0 +1,43 @@
+{
+  "actualExtension": true,
+  "transport": "fake",
+  "pageGrant": "test-harness",
+  "capabilities": {
+    "actions": [
+      "read"
+    ]
+  },
+  "unsupportedActionRejected": true,
+  "readCode": null,
+  "readPassed": true,
+  "subtreePassed": true,
+  "frameUpdate": {
+    "path": "/form.html",
+    "status": "complete"
+  },
+  "frameWait": {
+    "path": "/iframe.html",
+    "status": "complete"
+  },
+  "frameDocumentBeforeRead": {
+    "path": "/iframe.html",
+    "state": "complete",
+    "frames": 2
+  },
+  "frameResult": {
+    "outcome": "error",
+    "code": "unsupported_page",
+    "path": null,
+    "snapshotHasFrames": false
+  },
+  "framesRejected": true,
+  "noPartialSnapshot": true,
+  "frameDocumentAfterRead": {
+    "path": "/iframe.html",
+    "frames": 2
+  },
+  "noDebugPermission": true,
+  "passed": true,
+  "independentProfile": true,
+  "log": "/home/linche/.claude/jobs/1c452ec1/tmp/dom-event-probe-HJ2dnT/runner.log"
+}

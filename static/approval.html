@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Services Platform</title>
+  <link rel="icon" type="image/png" href="icons/browser-assistant-32.png">
+  <link rel="stylesheet" href="approval.css">
+</head>
+<body>
+  <main aria-labelledby="title">
+    <div class="window-title">
+      <span data-i18n="approvalWindowTitle"></span>
+      <button id="close" type="button">×</button>
+    </div>
+    <header class="brand">
+      <img src="icons/emblem.png" alt="">
+      <div>
+        <strong data-i18n="brandName"></strong>
+        <small data-i18n="brandUniversity"></small>
+      </div>
+    </header>
+    <div id="content" class="content">
+      <div id="conversationRow" class="conversation" hidden>
+        <span data-i18n="approvalConversation"></span>
+        <span id="conversation" dir="auto"></span>
+      </div>
+      <h1 id="title"></h1>
+      <div id="facts" class="fact" hidden></div>
+      <p id="body"></p>
+      <details id="scriptBox" class="script-disclosure" hidden>
+        <summary data-i18n="approvalScriptToggle"></summary>
+        <pre id="script"></pre>
+      </details>
+      <section id="review" class="notice" hidden>
+        <span data-i18n="approvalReview"></span>
+        <span id="reviewReason" dir="auto"></span>
+      </section>
+      <div id="clock" hidden>
+        <div class="countdown"><span aria-hidden="true">◷</span><span id="countdown" role="timer" aria-live="off"></span></div>
+        <div class="countdown-track"><span id="track"></span></div>
+      </div>
+      <div id="pending" class="status-line" role="status" hidden>
+        <i class="spinner"></i><span data-i18n="approvalSubmitting"></span>
+      </div>
+      <div id="buttons" class="actions"></div>
+      <p id="kbdNote" class="kbd-note" data-i18n="approvalKeyboardNote" hidden></p>
+    </div>
+  </main>
+  <script type="module" src="approval.js"></script>
+</body>
+</html>

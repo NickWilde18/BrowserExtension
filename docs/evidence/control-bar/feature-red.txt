@@ -1,0 +1,33 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 test/e2e/control-bar.spec.ts:7:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 (2.6s)
+
+
+  1) test/e2e/control-bar.spec.ts:7:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 ───────────────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('#browser-assistant-controls')
+    Expected: visible
+    Timeout: 2000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 2000ms
+      - waiting for locator('#browser-assistant-controls')
+
+
+      10 |   const page = await aiPage(h, '/form.html');
+      11 |   const panel = page.locator('#browser-assistant-controls');
+    > 12 |   await expect(panel).toBeVisible({ timeout: 2000 });
+         |                       ^
+      13 |   await panel.getByRole('button', { name: 'Take over this conversation', exact: true }).click();
+      14 |   await expect(panel.getByText('You are in control', { exact: true })).toBeVisible();
+      15 |   expect(await h.sw.evaluate(() => (globalThis as any).__bxTest.attachedCount())).toBe(1);
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/control-bar.spec.ts:12:23
+
+    Error Context: test-results/control-bar-归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续/error-context.md
+
+  1 failed
+    test/e2e/control-bar.spec.ts:7:1 › 归属页控制条确认对话级接管；恢复先观察、不重放动作，其他对话继续 ────────────────────────────

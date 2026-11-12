@@ -1,0 +1,26 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/server-settings.test.ts (8 tests | 1 failed | 7 skipped) 7ms
+     × 切换失败后选回原来源也重建运行期，不把已销毁连接当作恢复成功 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/server-settings.test.ts > 单活动服务器设置 > 切换失败后选回原来源也重建运行期，不把已销毁连接当作恢复成功
+AssertionError: expected "vi.fn()" to be called 2 times, but got 1 times
+ ❯ test/unit/server-settings.test.ts:80:20
+     78|     expect(await settings.select('https://second.test', 'epoch-1')).to…
+     79|     expect(await settings.select('https://first.test', 'epoch-1')).toE…
+     80|     expect(create).toHaveBeenCalledTimes(2);
+       |                    ^
+     81|     expect(settings.runtime?.epoch).toBe('epoch-2');
+     82|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 skipped (8)
+   Start at  13:53:10
+   Duration  178ms (transform 45ms, setup 0ms, import 59ms, tests 7ms, environment 0ms)
+

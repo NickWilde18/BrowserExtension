@@ -1,0 +1,33 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/misc.test.ts (16 tests | 1 failed | 15 skipped) 6ms
+     × 对话先请求读取但没有当前页时，随后共享的页成为当前页 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/misc.test.ts > TabRegistry > 对话先请求读取但没有当前页时，随后共享的页成为当前页
+AssertionError: expected null to be 77 // Object.is equality
+
+- Expected:
+77
+
++ Received:
+null
+
+ ❯ test/unit/misc.test.ts:174:36
+    172|     expect(await reg.active('c1')).toBeNull();
+    173|     expect(await reg.share(77)).toBe('c1');
+    174|     expect(await reg.active('c1')).toBe(77);
+       |                                    ^
+    175|   });
+    176|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 skipped (16)
+   Start at  15:01:40
+   Duration  400ms (transform 256ms, setup 0ms, import 286ms, tests 6ms, environment 0ms)
+

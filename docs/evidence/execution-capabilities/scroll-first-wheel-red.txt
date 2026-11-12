@@ -1,0 +1,26 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 (1.7s)
+
+
+  1) test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 ────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+      198 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      199 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 200 |   expect(await page.evaluate(() => (window as any).__trustedWheels)).toBe(1);
+          |                                                                      ^
+      201 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+      202 |
+      203 |   const snap = await snapshot();
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:200:70
+
+    Error Context: test-results/actions-scroll：首个可信滚轮到达页面，随后可滚到元素/error-context.md
+
+  1 failed
+    test/e2e/actions.spec.ts:189:1 › scroll：首个可信滚轮到达页面，随后可滚到元素 ─────────────────────────────────────

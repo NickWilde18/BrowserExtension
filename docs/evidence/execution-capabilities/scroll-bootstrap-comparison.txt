@@ -1,0 +1,32 @@
+
+Running 3 tests using 1 worker
+
+{"mode":"full","result":{"type":"result","request_id":"00000000-0000-4000-8000-000000000002","outcome":"ok","page":{"url":"http://127.0.0.1:18961/long.html","title":"Long","origin":"http://127.0.0.1:18961"}},"trace":[{"method":"Page.setWebLifecycleState","target":{"tabId":1860030316},"result":{}},{"method":"Page.createIsolatedWorld","target":{"tabId":1860030316},"result":{"executionContextId":6}},{"method":"Runtime.evaluate","target":{"tabId":1860030316},"result":{"result":{"type":"boolean","value":true}}},{"method":"Runtime.callFunctionOn","target":{"tabId":1860030316},"result":{"result":{"type":"object","value":[1200,800]}}},{"method":"Input.dispatchMouseEvent","target":{"tabId":1860030316},"result":{}}],"observed":{"y":0,"wheels":[]}}
+  ✘  1 test/e2e/scroll-diagnostic.spec.ts:6:3 › scroll diagnostic full (704ms)
+{"mode":"minimal","result":{"type":"result","request_id":"00000000-0000-4000-8000-000000000002","outcome":"ok","page":{"url":"http://127.0.0.1:18961/long.html","title":"Long","origin":"http://127.0.0.1:18961"}},"trace":[{"method":"Page.setWebLifecycleState","target":{"tabId":831738773},"result":{}},{"method":"Page.createIsolatedWorld","target":{"tabId":831738773},"result":{"executionContextId":6}},{"method":"Runtime.evaluate","target":{"tabId":831738773},"result":{"result":{"type":"boolean","value":true}}},{"method":"Runtime.callFunctionOn","target":{"tabId":831738773},"result":{"result":{"type":"object","value":[1200,800]}}},{"method":"Input.dispatchMouseEvent","target":{"tabId":831738773},"result":{}}],"observed":{"y":800,"wheels":[{"trusted":true,"dy":800}]}}
+  ✓  2 test/e2e/scroll-diagnostic.spec.ts:6:3 › scroll diagnostic minimal (743ms)
+{"mode":"no-interceptors","result":{"type":"result","request_id":"00000000-0000-4000-8000-000000000004","outcome":"ok","page":{"url":"http://127.0.0.1:18961/long.html","title":"Long","origin":"http://127.0.0.1:18961"}},"trace":[{"method":"Page.setWebLifecycleState","target":{"tabId":1086067628},"result":{}},{"method":"Page.createIsolatedWorld","target":{"tabId":1086067628},"result":{"executionContextId":6}},{"method":"Runtime.evaluate","target":{"tabId":1086067628},"result":{"result":{"type":"boolean","value":true}}},{"method":"Runtime.callFunctionOn","target":{"tabId":1086067628},"result":{"result":{"type":"object","value":[1200,800]}}},{"method":"Input.dispatchMouseEvent","target":{"tabId":1086067628},"result":{}}],"observed":{"y":800,"wheels":[{"trusted":true,"dy":800}]}}
+  ✓  3 test/e2e/scroll-diagnostic.spec.ts:6:3 › scroll diagnostic no-interceptors (755ms)
+
+
+  1) test/e2e/scroll-diagnostic.spec.ts:6:3 › scroll diagnostic full ───────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      30 |       const result = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      31 |       console.log(JSON.stringify({ mode, result, trace: await h.sw.evaluate(() => (globalThis as any).__trace), observed: await page.evaluate(() => ({ y: scrollY, wheels: (window as any).__wheels })) }));
+    > 32 |       expect(await page.evaluate(() => scrollY)).toBeGreaterThan(400);
+         |                                                  ^
+      33 |     } finally { await h.close(); }
+      34 |   });
+      35 | }
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/scroll-diagnostic.spec.ts:32:50
+
+    Error Context: test-results/scroll-diagnostic-scroll-diagnostic-full/error-context.md
+
+  1 failed
+    test/e2e/scroll-diagnostic.spec.ts:6:3 › scroll diagnostic full ────────────────────────────────
+  2 passed (3.2s)

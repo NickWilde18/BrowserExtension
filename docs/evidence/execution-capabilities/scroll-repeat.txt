@@ -1,0 +1,106 @@
+
+Running 5 tests using 1 worker
+
+  ✘  1 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (1.7s)
+  ✘  2 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (1.8s)
+  ✘  3 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (736ms)
+  ✘  4 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (1.7s)
+  ✘  5 test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 (747ms)
+
+
+  1) test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ───────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      192 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      193 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 194 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+          |                                                     ^
+      195 |
+      196 |   const snap = await snapshot();
+      197 |   await call(h, 'scroll', { element: 'Bottom', ref: refOf(snap, 'Bottom') });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:194:53
+
+    Error Context: test-results/actions-scroll：滚到元素与滚轮/error-context.md
+
+  2) test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ───────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      192 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      193 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 194 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+          |                                                     ^
+      195 |
+      196 |   const snap = await snapshot();
+      197 |   await call(h, 'scroll', { element: 'Bottom', ref: refOf(snap, 'Bottom') });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:194:53
+
+    Error Context: test-results/actions-scroll：滚到元素与滚轮-repeat1/error-context.md
+
+  3) test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ───────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      192 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      193 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 194 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+          |                                                     ^
+      195 |
+      196 |   const snap = await snapshot();
+      197 |   await call(h, 'scroll', { element: 'Bottom', ref: refOf(snap, 'Bottom') });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:194:53
+
+    Error Context: test-results/actions-scroll：滚到元素与滚轮-repeat2/error-context.md
+
+  4) test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ───────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      192 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      193 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 194 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+          |                                                     ^
+      195 |
+      196 |   const snap = await snapshot();
+      197 |   await call(h, 'scroll', { element: 'Bottom', ref: refOf(snap, 'Bottom') });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:194:53
+
+    Error Context: test-results/actions-scroll：滚到元素与滚轮-repeat3/error-context.md
+
+  5) test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ───────────────────────────────────────────────
+
+    Error: expect(received).toBeGreaterThan(expected)
+
+    Expected: > 400
+    Received:   0
+
+      192 |   const r = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      193 |   expect(r.outcome, JSON.stringify(r)).toBe('ok');
+    > 194 |   expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(400);
+          |                                                     ^
+      195 |
+      196 |   const snap = await snapshot();
+      197 |   await call(h, 'scroll', { element: 'Bottom', ref: refOf(snap, 'Bottom') });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/actions.spec.ts:194:53
+
+    Error Context: test-results/actions-scroll：滚到元素与滚轮-repeat4/error-context.md
+
+  5 failed
+    test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ────────────────────────────────────────────────
+    test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ────────────────────────────────────────────────
+    test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ────────────────────────────────────────────────
+    test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ────────────────────────────────────────────────
+    test/e2e/actions.spec.ts:189:1 › scroll：滚到元素与滚轮 ────────────────────────────────────────────────

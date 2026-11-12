@@ -1,0 +1,26 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 (657ms)
+
+
+  1) test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 ──────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "http://127.0.0.1:18960"
+    Received: undefined
+
+      18 |   const p = await popup();
+      19 |   const state = await p.evaluate(() => chrome.runtime.sendMessage({ type: 'popup:state' }));
+    > 20 |   expect(state.serverOrigin).toBe('http://127.0.0.1:18960');
+         |                              ^
+      21 |   expect(typeof state.serverEpoch).toBe('string');
+      22 |   const switched = await p.evaluate(({ origin, epoch }) => chrome.runtime.sendMessage({ type: 'popup:setServer', origin, epoch }), { origin: A, epoch: state.serverEpoch });
+      23 |   expect(switched).toMatchObject({ ok: true });
+        at /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension/test/e2e/server-settings.spec.ts:20:30
+
+    Error Context: test-results/server-settings-服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属/error-context.md
+
+  1 failed
+    test/e2e/server-settings.spec.ts:14:1 › 服务器配置可读；切换到同主机另一来源也清除同名账号的授权与页归属 ───────────────────────

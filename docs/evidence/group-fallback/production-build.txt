@@ -1,0 +1,2 @@
+$ node scripts/build.mjs --platform-origin https://example.test --out dist-production-check
+built dist-production-check platform=https://example.test testHooks=false fakeTransport=false injected=1.62.1

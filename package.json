@@ -1,0 +1,27 @@
+{
+  "name": "browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "让平台的 Agent 在用户授权的站点上操作用户本机的 Chrome / Edge。",
+  "type": "module",
+  "packageManager": "pnpm@12.2.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:test": "node scripts/build.mjs --test-hooks --fake-transport --platform-origin http://127.0.0.1:18960 --out dist-test && node scripts/build.mjs --test-hooks --platform-origin http://127.0.0.1:18963 --out dist-test-fetch && node scripts/build.mjs --test-hooks --fake-transport --execution-backend dom --platform-origin http://127.0.0.1:18960 --out dist-test-dom",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "e2e": "pnpm run build:test && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "1.62.1",
+    "typescript": "~7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

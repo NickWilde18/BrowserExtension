@@ -1,0 +1,17 @@
+恢复后先启用上一轮跳过的方案 A 回归，对未修实现运行：
+pnpm exec vitest run test/unit/approval.test.ts -t '连着平台时总先问' --reporter=verbose
+
+FAIL  test/unit/approval.test.ts > Gate：先问审查、再问用户 > 连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关
+AssertionError: expected 'progress' to be 'approval_request' // Object.is equality
+
+Expected: "approval_request"
+Received: "progress"
+
+ ❯ test/unit/approval.test.ts:233:33
+    231|     const p = gate.confirm(gateCtx(), { kind: 'download', site: 'https…
+    232|     await until(() => windows.opened.length > 0);
+    233|     expect(sentFrames[0]?.type).toBe('approval_request');
+       |                                 ^
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 20 skipped (21)

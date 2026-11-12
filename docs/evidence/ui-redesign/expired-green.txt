@@ -1,0 +1,30 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ↓ test/unit/approval.test.ts > 确认窗：独立打开并留给页面按内容调整高度 > 短确认不再预留固定 600px 高度，仍使用独立 popup 并获得焦点
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > 对得上的 approval 交出结论
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > request_id 不对 → ask_user
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > kind 与发出时不同 → ask_user
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > kind 不在五类里 → ask_user
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > decision 不认识 → ask_user
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > 不认识的 approval_id 忽略；15 秒没回按 ask_user，之后再来的放行不算数
+ ↓ test/unit/approval.test.ts > ApprovalRegistry：放行只认自己发出的请求（按 request_id + approval_id + kind） > block 带理由
+ ↓ test/unit/approval.test.ts > 旧连接上开始的请求，它的 approval / cancel 从后来的连接到达（补充约定 1） > 审查结论从轮换（rotate）后的新连接到达：照认
+ ↓ test/unit/approval.test.ts > 旧连接上开始的请求，它的 approval / cancel 从后来的连接到达（补充约定 1） > 断线重连之后也一样：等结论期间连接断了不按 ask_user，新连接上来的结论照认；cancel 同样按 request_id 认
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 审查放行：不弹小窗、不发进度，计时暂停又恢复
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 连着平台时总先问 Chat（以对话档位为准），Chat 回 ask_user 才弹窗；插件不再有自己的开关
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 弹窗等用户期间告诉控制条这段对话在等确认，答完撤销
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 每次确认把结果类别记到请求上下文（不含站点、文件名等内容）
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 审查拦下：小窗带理由，用户定；前后发 awaiting_user / working
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 确认窗带上请求已有的会话标题；没有标题时不补造来源
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 开关关掉或没连上：不发审批请求，直接问用户；站点的两种允许映射到范围
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 等用户超时、用户关掉小窗都按拒绝
+ ↓ test/unit/approval.test.ts > Gate：先问审查、再问用户 > 密码框「我自己输入」：小窗留着，切到完成阶段
+ ✓ test/unit/approval.test.ts > PromptManager：到时没答保留「确认已过期」说明页 > 超时记为 timeout，但不自动关窗：窗口改显示已过期，用户关窗时才清理；过期后的答复不收 25ms
+ ✓ test/unit/approval.test.ts > PromptManager：到时没答保留「确认已过期」说明页 > 「我自己输入」等完成超时同样保留说明页；被取消、运行期结束仍直接关窗 22ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 19 skipped (21)
+   Start at  01:08:38
+   Duration  342ms (transform 168ms, setup 0ms, import 191ms, tests 48ms, environment 0ms)
+

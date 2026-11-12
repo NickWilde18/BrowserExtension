@@ -1,0 +1,35 @@
+// 临时单变量诊断；不计入产品验收。
+import { expect, test } from '@playwright/test';
+import { A, aiPage, allowSite, call, launch } from './helpers';
+
+for (const mode of ['full', 'minimal', 'no-interceptors'] as const) {
+  test(`scroll diagnostic ${mode}`, async () => {
+    const h = await launch();
+    try {
+      await allowSite(h, A);
+      await call(h, 'open', { url: `${A}/long.html` });
+      const page = await aiPage(h, '/long.html');
+      await page.evaluate(() => {
+        (window as any).__wheels = [];
+        window.addEventListener('wheel', (e) => (window as any).__wheels.push({ trusted: e.isTrusted, dy: e.deltaY }), { passive: true });
+      });
+      await h.sw.evaluate((mode) => {
+        const native = chrome.debugger.sendCommand.bind(chrome.debugger) as any;
+        (globalThis as any).__trace = [];
+        chrome.debugger.sendCommand = (async (target: any, method: string, params: any) => {
+          if (method === 'Runtime.evaluate' && params?.expression?.includes('globalThis.__bxAgent =')) {
+            if (mode === 'minimal') params = { ...params, expression: 'globalThis.__bxAgent = { viewportSize() { return [innerWidth, innerHeight]; } }; true' };
+            if (mode === 'no-interceptors') params = { ...params, expression: params.expression.replace('this._setupHitTargetInterceptors();', 'void 0;') };
+          }
+          const row: any = { method, target };
+          (globalThis as any).__trace.push(row);
+          try { const out = await native(target, method, params); row.result = out; return out; }
+          catch (e) { row.error = String(e); throw e; }
+        }) as any;
+      }, mode);
+      const result = await call(h, 'scroll', { x: 300, y: 300, direction: 'down', amount: 800 });
+      console.log(JSON.stringify({ mode, result, trace: await h.sw.evaluate(() => (globalThis as any).__trace), observed: await page.evaluate(() => ({ y: scrollY, wheels: (window as any).__wheels })) }));
+      expect(await page.evaluate(() => scrollY)).toBeGreaterThan(400);
+    } finally { await h.close(); }
+  });
+}

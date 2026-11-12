@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-test/
+dist-test-fetch/
+dist-test-dom/
+test-results/
+playwright-report/
+*.pem
+*.crx

@@ -1,0 +1,37 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+ ❯ test/unit/capabilities.test.ts (1 test | 1 failed) 9ms
+     × 即使旧服务器下发未声明动作，也先拒绝，不触碰标签或权限 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/unit/capabilities.test.ts > 设备动作能力边界 > 即使旧服务器下发未声明动作，也先拒绝，不触碰标签或权限
+AssertionError: expected { type: 'result', …(4) } to match object { outcome: 'error', …(1) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "code": "unsupported_action",
++   "code": "no_tab",
+    "outcome": "error",
+  }
+
+ ❯ test/unit/capabilities.test.ts:17:20
+     15|     } as unknown as Services;
+     16|     const result = await runRequest(services, request, new AbortContro…
+     17|     expect(result).toMatchObject({ outcome: 'error', code: 'unsupporte…
+       |                    ^
+     18|     expect(touch).not.toHaveBeenCalled();
+     19|     expect(execute).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  14:44:50
+   Duration  385ms (transform 238ms, setup 0ms, import 269ms, tests 9ms, environment 0ms)
+

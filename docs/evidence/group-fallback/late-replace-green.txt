@@ -1,0 +1,9 @@
+
+ RUN  v4.1.12 /home/linche/.cache/foreman/wt/528-BrowserExtension/.claude/worktrees/tark528-extension
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 4 skipped (5)
+   Start at  04:49:09
+   Duration  204ms (transform 72ms, setup 0ms, import 92ms, tests 7ms, environment 0ms)
+
