@@ -272,6 +272,7 @@ if (__TEST_HOOKS__) {
     get tabs() { return settings.runtime?.tabs; },
     detachLog,
     attachedCount: () => settings.runtime?.sessions.attachedCount ?? 0,
+    identity,
     cdp: (tabId: number, method: string, params: Record<string, unknown> = {}) => settings.runtime?.sessions.peek(tabId)?.cdp.send(method, params),
   };
 }

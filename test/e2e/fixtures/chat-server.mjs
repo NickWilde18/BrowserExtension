@@ -9,7 +9,7 @@
 //
 // 用法：node chat-server.mjs <端口>，就绪时打印一行 {"ready":true,…}
 import http from 'node:http';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 const port = Number(process.argv[2] || 18963);
@@ -19,6 +19,33 @@ const COOKIE = 'gfsessionid=sess-ok';
 const BASE = '/chat-service/browser/';
 /** install_id 的规范形态（小写带连字符）；不是的 frames / uploads / files 回 400（与 Chat 一致）。 */
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const B64URL = /^[A-Za-z0-9_-]+$/;
+const SPKI_P256_PREFIX = Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex');
+
+/** 由 raw 公钥推导 install_id（设计稿 539-INST 2.1）：SHA-256 前 16 字节，UUIDv8 + RFC 9562 变体。 */
+function installIdOf(raw) {
+  const h = createHash('sha256').update(raw).digest().subarray(0, 16);
+  h[6] = (h[6] & 0x0f) | 0x80;
+  h[8] = (h[8] & 0x3f) | 0x80;
+  const x = h.toString('hex');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+/** 与 Chat 换凭据校验同一顺序（2.4）：长度 → 点在曲线上 → 公钥算出的 id 等于 install_id → P1363 验签。 */
+function installProofValid(input) {
+  if (typeof input.install_key !== 'string' || typeof input.install_proof !== 'string'
+    || !B64URL.test(input.install_key) || !B64URL.test(input.install_proof)) return false;
+  const raw = Buffer.from(input.install_key, 'base64url');
+  const sig = Buffer.from(input.install_proof, 'base64url');
+  if (raw.length !== 65 || sig.length !== 64 || raw[0] !== 4) return false;
+  let key;
+  try { key = createPublicKey({ key: Buffer.concat([SPKI_P256_PREFIX, raw]), format: 'der', type: 'spki' }); } catch { return false; }
+  const expected = Buffer.from(installIdOf(raw));
+  const got = Buffer.from(String(input.install_id));
+  if (expected.length !== got.length || !timingSafeEqual(expected, got)) return false;
+  const msg = Buffer.from(`chat-browser-install-proof/v1\n${input.install_id}\n${input.code}`, 'utf8');
+  return verify('sha256', msg, { key, dsaEncoding: 'ieee-p1363' }, sig);
+}
 
 const state = {
   requests: [],
@@ -33,6 +60,9 @@ const state = {
   holdApprovals: false,
   heldApprovals: [],
   exchanges: 0,
+  /** 最近一次成功换凭据的公开部分（install_id 与公钥），给测试核对重启前后是否同一把密钥。 */
+  lastExchange: null,
+  proofRejections: 0,
   authorizations: 0,
   logouts: 0,
   nextAuth: '',
@@ -216,6 +246,9 @@ const server = http.createServer(async (req, res) => {
       || createHash('sha256').update(input.code_verifier).digest('base64url') !== grant.challenge) {
       reject(res, 400); return;
     }
+    // 授权码已在上面取出并删掉：签名不对也不能拿同一个码重试。
+    if (!installProofValid(input)) { state.proofRejections++; reject(res, 400); return; }
+    state.lastExchange = { install_id: input.install_id, install_key: input.install_key };
     const value = randomBytes(32).toString('base64url');
     credentials.set(value, grant.installId);
     state.exchanges++;

@@ -1,3 +1,4 @@
+import { base64url } from '../identity';
 import type { Identity } from '../identity';
 import type { KV } from '../storage';
 
@@ -17,9 +18,6 @@ interface Options {
 
 function randomValue(): string {
   return base64url(crypto.getRandomValues(new Uint8Array(32)));
-}
-function base64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 /** 每个运行期只有一次进行中的授权；凭据只属于签发它的平台和安装。 */
@@ -108,7 +106,8 @@ export class BrowserAuthentication {
     const verifier = randomValue();
     const state = randomValue();
     const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
-    const installId = await this.options.identity.installId();
+    // 换凭据用由安装密钥算出的 id（私钥不可用时在这里重新生成）；授权页与换凭据必须是同一个 id。
+    const installId = await this.options.identity.exchangeId();
     const displayName = await this.options.identity.displayName();
     if (!active()) return { ok: false };
     const identity = chrome.identity;
@@ -138,15 +137,21 @@ export class BrowserAuthentication {
         || result.searchParams.get('state') !== state || result.searchParams.has('error')) return { ok: false };
       const code = result.searchParams.get('code');
       if (!code) return { ok: false };
+      // 持有证明：用安装私钥对 install_id 与本次授权码签名（授权码只能换一次，签名随之只能用一次）。
+      const proof = await this.options.identity.prove(code);
+      if (!active() || proof.install_id !== installId) return { ok: false };
       const response = await fetch(`${this.options.origin}/chat-service/browser/token`, {
         method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
         headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
-        body: JSON.stringify({ code, code_verifier: verifier, install_id: installId, redirect_uri: redirect }),
+        body: JSON.stringify({ code, code_verifier: verifier, install_id: installId, redirect_uri: redirect,
+          install_key: proof.install_key, install_proof: proof.install_proof }),
       });
       if (!response.ok) return { ok: false };
       const body: unknown = await response.json();
       if (!active() || !body || typeof body !== 'object' || !('credential' in body) || typeof body.credential !== 'string'
         || !body.credential || !('account' in body) || typeof body.account !== 'string' || !body.account) return { ok: false };
+      // 换凭据成功才改用新 id：hello 与凭据比对从此用它（之前一直沿用缓存的旧 id 和旧凭据）。
+      await this.options.identity.adopt(installId);
       await this.options.local.set(CREDENTIAL_KEY, { origin: this.options.origin, installId, credential: body.credential, account: body.account });
       if (!active()) return { ok: false };
       this.options.onAuthenticated();

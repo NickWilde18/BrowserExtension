@@ -16,7 +16,7 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 | `uploads` | 凭请求里的令牌取上传文件的原始字节；读到的字节数与 `Content-Length` 不符就当没取到，不放进页面 |
 | `files` | 下载、存 PDF 的内容 multipart 送回，拿 `file_id` |
 
-`install_id` 只用规范形态的 UUID（小写带连字符，Chat 对不是的回 400）；本地存储里的值不合规时换一个新的。
+`install_id` 由安装公钥算出：首次运行用 WebCrypto 生成 ECDSA P-256 密钥对（私钥不可导出），CryptoKeyPair 存进插件的 IndexedDB；`install_id` = SHA-256(raw 公钥) 前 16 字节，置 UUIDv8 版本位与 RFC 9562 变体位，排成小写带连字符的规范形态。当前使用的 `install_id` 存在 `storage.local` 的 `identity.installId`，启动时不拿密钥核对：密钥丢了或和缓存对不上，照旧用缓存的 id 和凭据。只在换凭据时发现私钥不可用，才重新生成密钥和 id（等于重装，Chat 按新设备认），换凭据成功后改用新 id。从随机 UUID 的旧版本升级后，照旧用原来的 id 和凭据；下一次换凭据（退出后重新登录、凭据被撤销或失效）时才换成由公钥算出的 id。
 
 ### 独立登录与退出
 
@@ -24,7 +24,7 @@ fetch 双向通道（计划第 9 节第 11 条定为 A2，契约第 2 节，`src
 
 Safari 没有 identity 接口时打开平台授权标签页，只接受该标签页导航到同源 `/chat/browser-extension/callback`；核对 state 后交换凭据，再关闭该授权页。关页、拒绝、state 不符均不保存凭据。校验串和授权过程仅保存在运行期内存；若后台或浏览器退出导致登录中断，重新点击登录即可。
 
-平台授权页向 `POST /chat/browser/authorize/` 提交确认，返回一次性 code 与已经校验的 redirect_uri（由 UI 实现）。插件向 `POST /chat-service/browser/token` 发送 `{code, code_verifier, install_id, redirect_uri}`，Safari 的 `redirect_uri` 为 `""`，交换请求不发送 browser。成功响应直接是 `{credential, account}`。凭据保存在 `storage.local`，绑定当前平台 origin 和安装 ID，不轮换、撤销前有效。旧安装没有凭据时需要独立登录，网页登录或退出不会改变插件登录。
+平台授权页向 `POST /chat/browser/authorize/` 提交确认，返回一次性 code 与已经校验的 redirect_uri（由 UI 实现）。插件向 `POST /chat-service/browser/token` 发送 `{code, code_verifier, install_id, redirect_uri, install_key, install_proof}`，Safari 的 `redirect_uri` 为 `""`，交换请求不发送 browser。`install_key` 是 raw 公钥（65 字节未压缩点），`install_proof` 是安装私钥对 `chat-browser-install-proof/v1\n<install_id>\n<code>`（UTF-8，末尾无换行）的 ECDSA/SHA-256 签名（IEEE P1363，64 字节），两者都是无填充 base64url；Chat 据此确认请求方持有这份安装。浏览器真签样本见 `test/fixtures/install-proof/samples.json`（`node test/probe/install-proof-samples.mjs` 生成），Chromium / Firefox 的密钥持久性实测脚本是 `test/probe/install-key.mjs`（Safari 需在 macOS 上手测）。成功响应直接是 `{credential, account}`。凭据保存在 `storage.local`，绑定当前平台 origin 和安装 ID，不轮换、撤销前有效。旧安装没有凭据时需要独立登录，网页登录或退出不会改变插件登录。
 
 401 或 `closed.revoked` 清除本机凭据、站点授权、对话/共享/接管状态，停止重连并等待重新授权；保留用户网页。退出登录向 `POST /chat-service/browser/logout` 发送 `{install_id}`，同样带 Bearer、omit，同时清理本机授权。网络失败仍退出本机并提示在平台移除设备，不能据此声称服务端已撤销。
 
