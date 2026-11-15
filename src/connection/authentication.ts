@@ -80,7 +80,7 @@ export class BrowserAuthentication {
     const cleanup = this.invalidate();
     try {
       if (!credential) return { ok: true };
-      const response = await fetch(`${this.options.origin}/chat-service/browser/logout`, {
+      const response = await fetch(`${this.options.origin}/browser-extension/logout`, {
         method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${credential}` },
         body: JSON.stringify({ install_id: installId }),
@@ -140,7 +140,7 @@ export class BrowserAuthentication {
       // 持有证明：用安装私钥对 install_id 与本次授权码签名（授权码只能换一次，签名随之只能用一次）。
       const proof = await this.options.identity.prove(code);
       if (!active() || proof.install_id !== installId) return { ok: false };
-      const response = await fetch(`${this.options.origin}/chat-service/browser/token`, {
+      const response = await fetch(`${this.options.origin}/browser-extension/token`, {
         method: 'POST', credentials: 'omit', cache: 'no-store', redirect: 'error',
         headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
         body: JSON.stringify({ code, code_verifier: verifier, install_id: installId, redirect_uri: redirect,

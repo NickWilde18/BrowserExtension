@@ -1,7 +1,7 @@
 // 端到端测试用的仿 Chat 服务（契约第 2 节）：插件经真实传输连它。
 //
 // - GET /login 下发与网关同属性的会话 Cookie（HttpOnly; SameSite=Lax; Path=/），模拟用户在平台网页上登录；
-// - /chat-service/browser/{stream,frames,uploads,files} 四个接口，校验 Cookie 与 Origin（只认测试插件的 id）；
+// - /browser-extension/{stream,frames,uploads,files} 四个接口，校验 Cookie 与 Origin（只认测试插件的 id）；
 // - 收到 approval_request 时像现在的 Chat 一样回 ask_user（或先扣着，由测试代码从后来的连接回结论）；
 // - 被拒时的响应体与 Chat 一致：400 / 403 是一行 closed，401 / 404 / 429 是 JSON 错误；
 // - /__control/* 给测试代码用：下发帧、轮换连接（closed rotate）、断线、让下一次 stream / frames / files 回某个状态、
@@ -16,7 +16,7 @@ const port = Number(process.argv[2] || 18963);
 const codes = new Map();
 const credentials = new Map();
 const COOKIE = 'gfsessionid=sess-ok';
-const BASE = '/chat-service/browser/';
+const BASE = '/browser-extension/';
 /** install_id 的规范形态（小写带连字符）；不是的 frames / uploads / files 回 400（与 Chat 一致）。 */
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const B64URL = /^[A-Za-z0-9_-]+$/;

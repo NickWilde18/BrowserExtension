@@ -30,7 +30,7 @@ with zipfile.ZipFile(package) as archive:
     checks['exact_permissions'] = manifest['permissions'] == ['debugger', 'tabs', 'tabGroups', 'storage', 'downloads', 'cookies', 'scripting']
     checks['optional_permissions'] = manifest['optional_host_permissions'] == ['http://*/*', 'https://*/*']
     checks['production_only'] = all(marker not in bg for marker in ['__bxTest', 'FakeTransport', 'FakeServer']) and 'backend-probe.js' not in names
-    checks['real_transport'] = '/chat-service/browser/' in bg
+    checks['real_transport'] = '/browser-extension/' in bg
     checks['cookie_listener_only'] = 'cookies.onChanged' in bg and not re.search(r'cookies\s*\.\s*(get|getAll|set|remove|getAllCookieStores|getPartitionKey)\b', bg)
     checks['no_service_header'] = 'x-service' not in bg.lower()
     checks['injection_and_license_resources'] = all(name in names for name in ['controlbar.js', 'dom-agent.js', 'third_party/playwright/LICENSE', 'third_party/playwright/NOTICE'])
