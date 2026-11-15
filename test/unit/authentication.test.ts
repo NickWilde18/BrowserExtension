@@ -69,7 +69,7 @@ describe('独立安装认证', () => {
     expect(await a).toEqual({ ok: true });
     expect(s.fetcher).toHaveBeenCalledTimes(1);
     const [url, init] = (s.fetcher.mock.calls as unknown as [string, RequestInit][])[0]!;
-    expect(url).toBe(`${ORIGIN}/chat-service/browser/token`);
+    expect(url).toBe(`${ORIGIN}/browser-extension/token`);
     expect(init.credentials).toBe('omit');
     const body = JSON.parse(String(init.body));
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.code_verifier));
@@ -230,7 +230,7 @@ describe('独立安装认证', () => {
     expect(await s.auth.credential()).toBeUndefined();
     expect(s.onInvalidated).toHaveBeenCalledTimes(1);
     const [url, init] = (s.fetcher.mock.calls as unknown as [string, RequestInit][]).at(-1)!;
-    expect(url).toBe(`${ORIGIN}/chat-service/browser/logout`);
+    expect(url).toBe(`${ORIGIN}/browser-extension/logout`);
     expect(init.credentials).toBe('omit');
     expect(new Headers(init.headers).get('authorization') === 'Bearer synthetic-fixture').toBe(true);
     expect(JSON.parse(String(init.body))).toEqual({ install_id: s.install });

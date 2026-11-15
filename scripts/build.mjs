@@ -140,7 +140,7 @@ if (!testHooks) {
     }
   }
 
-  if (!bg.includes('/chat-service/browser/')) {
+  if (!bg.includes('/browser-extension/')) {
     throw new Error('生产构建的 background.js 里没有真实传输');
   }
 

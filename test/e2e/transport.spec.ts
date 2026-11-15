@@ -17,7 +17,7 @@ const EXT = path.resolve(here, '..', '..', 'dist-test-fetch');
 const CHAT = `http://127.0.0.1:${CHAT_PORT}`;
 const EXT_ID = 'agagklnjfndomhambbpfhenaoclcbpmo';
 const EXT_ORIGIN = `chrome-extension://${EXT_ID}`;
-const PATHS = ['stream', 'frames', 'uploads', 'files'].map((p) => `/chat-service/browser/${p}`);
+const PATHS = ['stream', 'frames', 'uploads', 'files'].map((p) => `/browser-extension/${p}`);
 
 test.describe.configure({ mode: 'serial' });
 

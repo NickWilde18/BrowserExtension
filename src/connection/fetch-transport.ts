@@ -6,7 +6,7 @@
 // - uploads：凭令牌取上传文件的内容；
 // - files：下载、PDF 的内容 multipart 送回，拿 file_id。
 //
-// 四个接口都在 `<平台对外地址>/chat-service/browser/` 下，一律 POST、Bearer、credentials: "omit"。
+// 四个接口都在 `<平台对外地址>/browser-extension/` 下，一律 POST、Bearer、credentials: "omit"。
 // 不带服务选择头：网关按路径选服务，并向 Chat 同步校验安装凭据。插件里只有平台对外地址。
 
 import type { OutboundFrame } from '../protocol/frames';
@@ -142,7 +142,7 @@ export class FetchTransport implements Transport {
   }
 
   private url(name: 'stream' | 'frames' | 'uploads' | 'files'): string {
-    return `${this.origin}/chat-service/browser/${name}`;
+    return `${this.origin}/browser-extension/${name}`;
   }
 
   private async post(name: 'frames' | 'uploads' | 'files', body: BodyInit, contentType: string | null): Promise<Response> {

@@ -6,7 +6,7 @@ import { TransportError } from '../../src/connection/transport';
 import type { HelloFrame } from '../../src/protocol/frames';
 
 const ORIGIN = 'https://platform.test';
-const BASE = `${ORIGIN}/chat-service/browser/`;
+const BASE = `${ORIGIN}/browser-extension/`;
 const PATHS = new Set(['stream', 'frames', 'uploads', 'files'].map((p) => BASE + p));
 const INSTALL = '66666666-7777-4888-9999-aaaaaaaaaaaa';
 const HELLO: HelloFrame = { type: 'hello', protocol: 1, install_id: INSTALL, display_name: 'Chrome · Linux', extension_version: '0.1.0' };
