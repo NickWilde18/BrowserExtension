@@ -26,6 +26,10 @@ Safari 没有 identity 接口时打开平台授权标签页，只接受该标签
 
 平台授权页向 `POST /chat/browser/authorize/` 提交确认，返回一次性 code 与已经校验的 redirect_uri（由 UI 实现）。插件向 `POST /browser-extension/token` 发送 `{code, code_verifier, install_id, redirect_uri, install_key, install_proof}`，Safari 的 `redirect_uri` 为 `""`，交换请求不发送 browser。`install_key` 是 raw 公钥（65 字节未压缩点），`install_proof` 是安装私钥对 `chat-browser-install-proof/v1\n<install_id>\n<code>`（UTF-8，末尾无换行）的 ECDSA/SHA-256 签名（IEEE P1363，64 字节），两者都是无填充 base64url；Chat 据此确认请求方持有这份安装。浏览器真签样本见 `test/fixtures/install-proof/samples.json`（`node test/probe/install-proof-samples.mjs` 生成），Chromium / Firefox 的密钥持久性实测脚本是 `test/probe/install-key.mjs`（Safari 需在 macOS 上手测）。成功响应直接是 `{credential, account}`。凭据保存在 `storage.local`，绑定当前平台 origin 和安装 ID，不轮换、撤销前有效。旧安装没有凭据时需要独立登录，网页登录或退出不会改变插件登录。
 
+**授权页不绑定登录发起插件（已知边界，528-AUTHBIND=KEEP）**：平台授权页只校验参数和当前登录用户，不核对打开页面的人就是发起这次登录的插件。安装持有证明只证明换凭据方持有这份安装的私钥，不证明用户是在自己发起的登录中点了“允许”。别人用自己的插件生成授权链接，用户点“允许”后平台也会签发授权码。
+
+现有缓解是回调地址只接受浏览器给插件保留的地址：授权码留在点“允许”的浏览器里，Safari 留在平台回调页网址里。对方还得在授权码有效期 60 秒内另行取得用户抄回的网址或授权码，才能完成换凭据。这一边界来自源码核对，非发起浏览器收到跳转时的表现尚未做真机实测；本次维持现状，不加同浏览器签名或核对码等技术绑定。完整范围见 Chat 仓 `docs/BROWSER_EXTENSION.md` 2.3。
+
 401 或 `closed.revoked` 清除本机凭据、站点授权、对话/共享/接管状态，停止重连并等待重新授权；保留用户网页。退出登录向 `POST /browser-extension/logout` 发送 `{install_id}`，同样带 Bearer、omit，同时清理本机授权。网络失败仍退出本机并提示在平台移除设备，不能据此声称服务端已撤销。
 
 切换平台只表示保存地址、确认原生主机权限和清理旧运行期。新平台没有匹配凭据时停在等待登录，不发匿名 stream、不验证该地址是否为可达平台；完成独立授权后才建立连接。凭据不会发送给其他 origin。
